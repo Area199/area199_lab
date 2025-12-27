@@ -137,28 +137,45 @@ if not access_granted:
 # Se l'utente è un ATLETA, mostriamo solo i suoi dati e fermiamo l'app.
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
-    atleta_nome = st.text_input("Inserisci il tuo nome per accedere")
+    # Usiamo il nome inserito per filtrare
+    atleta_nome = st.text_input("Inserisci il tuo Nome e Cognome (esatto)")
     
     if atleta_nome:
+        # 1. Carichiamo lo storico
         df_hist = leggi_storico(atleta_nome)
-        if df_hist is not None:
-            # Mostra grafici (quelli che avevi già)
-            st.plotly_chart(grafico_trend(df_hist, "Peso", "#ff0000"))
+        
+        if df_hist is not None and not df_hist.empty:
+            st.success(f"Dati sincronizzati per: {atleta_nome}")
             
-            # --- NUOVO: Tasto Download ---
-            # Cerchiamo se nell'ultima riga del database c'è un link alla scheda
-            if 'Link_Scheda' in df_hist.columns:
-                ultimo_link = df_hist['Link_Scheda'].iloc[-1]
-                if pd.notna(ultimo_link):
-                    st.markdown(f"""
-                        <a href="{ultimo_link}" target="_blank">
+            # 2. Prendiamo l'ULTIMA riga (il protocollo più recente)
+            ultima_scheda = df_hist.iloc[-1] 
+            
+            # 3. MOSTRA I GRAFICI (Progresso)
+            col1, col2 = st.columns(2)
+            with col1:
+                g_p = grafico_trend(df_hist, "Peso", "#ff0000")
+                if g_p: st.plotly_chart(g_p, use_container_width=True)
+            with col2:
+                g_v = grafico_trend(df_hist, "Vita", "#ffff00")
+                if g_v: st.plotly_chart(g_v, use_container_width=True)
+
+            # 4. IL TASTO DOWNLOAD (Fondamentale)
+            # Verifichiamo se esiste la colonna col link alla scheda caricata su Drive
+            if 'Link_Scheda' in ultima_scheda and pd.notna(ultima_scheda['Link_Scheda']):
+                st.markdown(f"""
+                    <div style="background:#111; padding:20px; border:1px solid #ff0000; border-radius:10px; text-align:center;">
+                        <h3 style="color:#fff; margin-bottom:15px;">IL TUO NUOVO PROTOCOLLO È PRONTO</h3>
+                        <a href="{ultima_scheda['Link_Scheda']}" target="_blank">
                             <button style="width:100%; padding:15px; background-color:#ff0000; color:white; border:none; border-radius:10px; font-weight:bold; font-size:18px; cursor:pointer;">
-                                📥 SCARICA IL TUO ULTIMO PROTOCOLLO
+                                📥 SCARICA SCHEDA (PDF/HTML)
                             </button>
                         </a>
-                    """, unsafe_allow_html=True)
+                    </div>
+                """, unsafe_allow_html=True)
             else:
-                st.warning("Nessun protocollo digitale disponibile in archivio.")
+                st.warning("⚠️ Protocollo in fase di elaborazione. Il link non è ancora disponibile nel database.")
+        else:
+            st.error("❌ Nessun dato trovato. Assicurati che il Coach abbia archiviato almeno una scheda con questo nome.")
     st.stop()
 # --- CONFIGURAZIONE COSTANTI ---
 DB_CLIENTI = "database_clienti"
