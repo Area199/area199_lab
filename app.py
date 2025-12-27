@@ -213,12 +213,8 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # 1. INTEGRAZIONE GLIDE
 # ==============================================================================
 
-def aggiorna_db_glide(nome, email, dati_ai, note_coach=""):
-    """
-    Versione Cloud: Scrive direttamente su Google Sheets collegato a Glide.
-    Richiede st.secrets["gcp_service_account"] configurato.
-    """
-    # 1. Preparazione Dati
+def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
+    """Sincronizzazione database Google Sheets con colonna Link Drive."""
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -226,37 +222,22 @@ def aggiorna_db_glide(nome, email, dati_ai, note_coach=""):
         dati_ai.get('mesociclo', 'N/D'),
         dati_ai.get('cardio_protocol', ''),
         note_coach,
-        dati_ai.get('analisi_clinica', ''),
-        link_drive
+        dati_ai.get('analisi_clinica', ''), # <--- La virgola qui è fondamentale
+        link_drive                          # <--- Ultimo elemento della lista
     ]
     
-    # 2. Connessione a Google Sheets
     try:
-        # Verifica se i secret esistono
-        if "gcp_service_account" not in st.secrets:
-            st.error("❌ ERRORE CRITICO: Mancano i dati 'gcp_service_account' in secrets.toml")
-            return False
-
-        # Definisci gli scope (permessi)
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        
-        # Carica le credenziali dai segreti di Streamlit
+        # Assicurati che 'creds' sia definito correttamente tramite i secrets
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Apre il foglio (DEVE CHIAMARSI ESATTAMENTE COSI NEL TUO DRIVE)
         sheet = client.open("AREA199_DB").sheet1 
-        
-        # Aggiunge la riga in fondo
         sheet.append_row(nuova_riga)
         return True
-        
     except Exception as e:
-        st.error(f"ERRORE GLIDE SYNC: {e}")
+        st.error(f"ERRORE SYNC: {e}")
         return False
 
 def upload_to_drive(file_content, file_name, folder_id="https://docs.google.com/spreadsheets/d/19VoPKLaIex36kHGwl3sTI7UZYmevnF8IMt4hh-k7oyk/edit?usp=sharing"):
