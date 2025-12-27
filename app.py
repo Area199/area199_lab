@@ -215,7 +215,7 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     """Sincronizzazione database Google Sheets con colonna Link Drive."""
-    # Costruzione della riga con virgole posizionate correttamente
+    # COSTRUZIONE RIGA: Ogni elemento deve essere separato da una virgola
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
