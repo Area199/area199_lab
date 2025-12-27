@@ -13,7 +13,29 @@ from openai import OpenAI
 from difflib import get_close_matches
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
+# ==============================================================================
+# FUNZIONI TECNICHE DI BASE (SPOSTALE QUI IN ALTO)
+# ==============================================================================
+
+def leggi_storico(nome):
+    """Legge il file CSV dell'atleta specifico."""
+    clean = "".join(x for x in nome if x.isalnum() or x in " _-").strip()
+    p = os.path.join("database_clienti", clean, "storico_misure.csv")
+    return pd.read_csv(p) if os.path.exists(p) else None
+
+def grafico_trend(df, col_name, colore="#ff0000"):
+    """Genera grafico linea singola."""
+    if col_name not in df.columns: return None
+    df_clean = df[df[col_name] > 0].copy()
+    if df_clean.empty: return None
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df_clean['Data'], y=df_clean[col_name], mode='lines+markers', line=dict(color=colore)))
+    fig.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=30, b=10))
+    return fig
 # ==============================================================================
 # CONFIGURAZIONE "AREA 199 - DOTT. ANTONIO PETRUZZI"
 # ==============================================================================
@@ -115,27 +137,29 @@ if not access_granted:
 # Se l'utente è un ATLETA, mostriamo solo i suoi dati e fermiamo l'app.
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
-    st.markdown(f"Benvenuto nel tuo cruscotto tecnico. Inserisci il tuo nome per caricare lo storico.")
+    atleta_nome = st.text_input("Inserisci il tuo nome per accedere")
     
-    atleta_nome = st.text_input("Nome e Cognome Atleta")
     if atleta_nome:
         df_hist = leggi_storico(atleta_nome)
         if df_hist is not None:
-            st.success(f"Dati di {atleta_nome} recuperati correttamente.")
+            # Mostra grafici (quelli che avevi già)
+            st.plotly_chart(grafico_trend(df_hist, "Peso", "#ff0000"))
             
-            # MOSTRA GRAFICI TREND
-            col1, col2 = st.columns(2)
-            with col1:
-                g_p = grafico_trend(df_hist, "Peso", "#ff0000")
-                if g_p: st.plotly_chart(g_p, use_container_width=True)
-            with col2:
-                g_v = grafico_trend(df_hist, "Vita", "#ffff00")
-                if g_v: st.plotly_chart(g_v, use_container_width=True)
-            
-            st.info("💡 Consulta il report HTML/PDF che il Coach ti ha inviato per i coaching cues completi.")
-        else:
-            st.error("Atleta non trovato nel database locale.")
-    st.stop() # Impedisce all'atleta di vedere il pannello di controllo Coach
+            # --- NUOVO: Tasto Download ---
+            # Cerchiamo se nell'ultima riga del database c'è un link alla scheda
+            if 'Link_Scheda' in df_hist.columns:
+                ultimo_link = df_hist['Link_Scheda'].iloc[-1]
+                if pd.notna(ultimo_link):
+                    st.markdown(f"""
+                        <a href="{ultimo_link}" target="_blank">
+                            <button style="width:100%; padding:15px; background-color:#ff0000; color:white; border:none; border-radius:10px; font-weight:bold; font-size:18px; cursor:pointer;">
+                                📥 SCARICA IL TUO ULTIMO PROTOCOLLO
+                            </button>
+                        </a>
+                    """, unsafe_allow_html=True)
+            else:
+                st.warning("Nessun protocollo digitale disponibile in archivio.")
+    st.stop()
 # --- CONFIGURAZIONE COSTANTI ---
 DB_CLIENTI = "database_clienti"
 GLIDE_DB_NAME = "AREA199_GLIDE_DATABASE.csv"
@@ -217,6 +241,43 @@ def aggiorna_db_glide(nome, email, dati_ai, note_coach=""):
         st.error(f"ERRORE GLIDE SYNC: {e}")
         return False
 
+def upload_to_drive(file_content, file_name, folder_id="https://docs.google.com/spreadsheets/d/19VoPKLaIex36kHGwl3sTI7UZYmevnF8IMt4hh-k7oyk/edit?usp=sharing"):
+    """
+    Carica il report HTML direttamente in memoria su Google Drive.
+    """
+    try:
+        # Recupero credenziali dai secrets (usa le stesse di gspread)
+        s_info = st.secrets["gcp_service_account"]
+        scopes = ["https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(s_info, scopes=scopes)
+        
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Salvataggio temporaneo del file per l'upload
+        temp_path = f"temp_{file_name}"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write(file_content)
+
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id] if folder_id else []
+        }
+        media = MediaFileUpload(temp_path, mimetype='text/html', resumable=True)
+        
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        file_id = file.get('id')
+
+        # Permessi: Chiunque abbia il link può vedere (Viewer)
+        service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'viewer'}).execute()
+        
+        # Pulizia file temporaneo
+        if os.path.exists(temp_path): os.remove(temp_path)
+        
+        # Restituisce il link per il download diretto
+        return f"https://drive.google.com/uc?export=download&id={file_id}"
+    except Exception as e:
+        st.error(f"ERRORE UPLOAD DRIVE: {e}")
+        return None
 # ==============================================================================
 # 2. LOGICA MATEMATICA & BIOMETRIA AVANZATA
 # ==============================================================================
@@ -454,11 +515,6 @@ def salva_dati_check(nome, dati):
     else: df_final = df_new
     df_final.to_csv(csv_path, index=False)
 
-def leggi_storico(nome):
-    clean = "".join(x for x in nome if x.isalnum() or x in " _-").strip()
-    p = os.path.join(DB_CLIENTI, clean, "storico_misure.csv")
-    return pd.read_csv(p) if os.path.exists(p) else None
-
 
 def grafico_simmetria(df, parte_corpo):
     col_dx, col_sx = f"{parte_corpo} Dx", f"{parte_corpo} Sx"
@@ -476,31 +532,6 @@ def grafico_simmetria(df, parte_corpo):
     )
     return fig
 
-
-def grafico_trend(df, col_name, colore="#00ff00"):
-    """Genera grafico linea singola per Peso, Addome, ecc."""
-    if col_name not in df.columns: return None
-    # Pulisce i dati rimuovendo valori nulli o zero
-    df_clean = df[df[col_name] > 0].copy()
-    if df_clean.empty: return None
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df_clean['Data'], y=df_clean[col_name], 
-        mode='lines+markers', 
-        name=col_name, 
-        line=dict(color=colore, width=3),
-        marker=dict(size=8, color='#ffffff')
-    ))
-    fig.update_layout(
-        title=f"ANDAMENTO {col_name.upper()}", 
-        template="plotly_dark", 
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=20, r=20, t=40, b=20),
-        height=300
-    )
-    return fig
 
 # ==============================================================================
 # 4. INTELLIGENZA ARTIFICIALE (JSON CLEANER & DEBUG ENABLED)
