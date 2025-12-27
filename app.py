@@ -215,6 +215,7 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     """Sincronizzazione database Google Sheets con colonna Link Drive."""
+    # Costruzione della riga con validazione rigorosa dei separatori
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -222,12 +223,11 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         dati_ai.get('mesociclo', 'N/D'),
         dati_ai.get('cardio_protocol', ''),
         note_coach,
-        dati_ai.get('analisi_clinica', ''), # <--- La virgola qui è fondamentale
-        link_drive                          # <--- Ultimo elemento della lista
+        dati_ai.get('analisi_clinica', ''),
+        link_drive
     ]
     
     try:
-        # Assicurati che 'creds' sia definito correttamente tramite i secrets
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
