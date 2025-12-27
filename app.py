@@ -240,7 +240,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         st.error(f"ERRORE SYNC: {e}")
         return False
 
-def upload_to_drive(file_content, file_name, folder_id="https://docs.google.com/spreadsheets/d/19VoPKLaIex36kHGwl3sTI7UZYmevnF8IMt4hh-k7oyk/edit?usp=sharing"):
+def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rvMxyUYX1qa"):
     """
     Carica il report HTML direttamente in memoria su Google Drive.
     """
@@ -924,7 +924,6 @@ if 'last_ai' in st.session_state:
     df_hist = leggi_storico(st.session_state['last_nome'])
     
     if df_hist is not None and len(df_hist) > 1:
-        # Aggiungiamo i grafici se ci sono dati
         try:
             g_br = grafico_simmetria(df_hist, "Braccio")
             if g_br: grafici_html.append(pio.to_html(g_br, full_html=False, include_plotlyjs='cdn'))
@@ -944,30 +943,39 @@ if 'last_ai' in st.session_state:
         st.session_state.get('last_ffmi', 0)
     )
     
-    # 3. FUNZIONE CALLBACK (Usa l'email salvata alla generazione)
+    # 3. FUNZIONE CALLBACK CORRETTA (SEQUENZIALE)
     def azione_invio_glide():
-        # Recupera l'email dalla memoria sicura (quella inserita al momento di ELABORA)
         mail_sicura = st.session_state.get('last_email_sicura')
+        nome_atleta = st.session_state.get('last_nome')
+        res = st.session_state.get('last_ai')
         
-        if mail_sicura:
-            res = st.session_state['last_ai']
-            ok = aggiorna_db_glide(
-                st.session_state['last_nome'], 
-                mail_sicura,  # <--- Usa la mail sicura
-                res, 
-                note_coach=res.get('warning_tecnico','')
-            )
-            if ok:
-                st.toast(f"✅ DATI INVIATI A GLIDE: {mail_sicura}", icon="🚀")
+        if mail_sicura and res:
+            # --- FASE 1: UPLOAD SU GOOGLE DRIVE ---
+            st.toast("📤 Caricamento Report su Google Drive...", icon="☁️")
+            # Chiamata esplicita alla funzione di upload
+            link_generato = upload_to_drive(html_report, f"AREA199_{nome_atleta}.html")
+            
+            if link_generato:
+                # --- FASE 2: INVIO A GOOGLE SHEETS ---
+                ok = aggiorna_db_glide(
+                    nome_atleta, 
+                    mail_sicura, 
+                    res, 
+                    link_drive=link_generato, # <--- ORA IL LINK VIENE PASSATO CORRETTAMENTE
+                    note_coach=res.get('warning_tecnico','')
+                )
+                if ok:
+                    st.toast(f"✅ PROTOCOLLO SINCRONIZZATO: {mail_sicura}", icon="🚀")
+                else:
+                    st.error("⚠️ Errore durante la scrittura su Google Sheets.")
             else:
-                st.toast("⚠️ Errore connessione Google Sheets.", icon="❌")
+                st.error("⚠️ Fallimento Upload Drive. Verifica permessi della cartella.")
         else:
-            # Se l'utente non aveva messo l'email prima di elaborare
-            st.toast("⚠️ ATTENZIONE: Email non trovata! Inseriscila PRIMA di cliccare Elabora.", icon="mailbox")
+            st.toast("⚠️ Email non trovata! Inseriscila PRIMA di cliccare Elabora.", icon="📧")
 
     # 4. IL BOTTONE UNICO
     st.download_button(
-        label="📥 SCARICA REPORT E INVIA A GLIDE", 
+        label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
         data=html_report, 
         file_name=f"AREA199_{st.session_state['last_nome']}.html", 
         mime="text/html",
