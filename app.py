@@ -226,7 +226,7 @@ def aggiorna_db_glide(nome, email, dati_ai, note_coach=""):
         dati_ai.get('mesociclo', 'N/D'),
         dati_ai.get('cardio_protocol', ''),
         note_coach,
-        dati_ai.get('analisi_clinica', '')
+        dati_ai.get('analisi_clinica', ''),
         link_drive
     ]
     
