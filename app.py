@@ -328,7 +328,8 @@ def recupera_protocollo_da_db(email_target):
 
 def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rvMxyUYX1qa"):
     """
-    Carica il report HTML su Google Drive gestendo correttamente la quota dei Service Accounts.
+    Carica il report HTML su Google Drive in modalità DIRETTA (No Resumable).
+    Bypassa l'errore di quota dei Service Accounts per file piccoli.
     """
     try:
         s_info = st.secrets["gcp_service_account"]
@@ -346,14 +347,14 @@ def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rv
             'parents': [folder_id]
         }
         
-        media = MediaFileUpload(temp_path, mimetype='text/html', resumable=True)
+        # --- FIX CRITICO: resumable=False ---
+        # Questo invia il file in un colpo solo, evitando il check della quota del bot
+        media = MediaFileUpload(temp_path, mimetype='text/html', resumable=False)
         
-        # NOTA: supportsAllDrives=True è fondamentale per evitare errori di quota 403
         file = service.files().create(
             body=file_metadata, 
             media_body=media, 
-            fields='id',
-            supportsAllDrives=True 
+            fields='id'
         ).execute()
         
         file_id = file.get('id')
@@ -361,8 +362,7 @@ def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rv
         # Permessi di visualizzazione pubblica
         service.permissions().create(
             fileId=file_id, 
-            body={'type': 'anyone', 'role': 'viewer'},
-            supportsAllDrives=True
+            body={'type': 'anyone', 'role': 'viewer'}
         ).execute()
         
         if os.path.exists(temp_path): os.remove(temp_path)
@@ -370,7 +370,7 @@ def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rv
         # Link diretto
         return f"https://drive.google.com/uc?export=download&id={file_id}"
     except Exception as e:
-        st.error(f"ERRORE CRITICO DRIVE (Quota/Permessi): {e}")
+        st.error(f"ERRORE CRITICO DRIVE: {e}")
         return None
 # ==============================================================================
 # 2. LOGICA MATEMATICA & BIOMETRIA AVANZATA
