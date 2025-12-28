@@ -1053,7 +1053,7 @@ if 'last_ai' in st.session_state:
         except Exception as e:
             st.warning(f"Errore rendering grafici: {e}")
 
-    # 2. GENERAZIONE REPORT HTML
+    # 2. GENERAZIONE REPORT HTML (Sintassi corretta)
     html_report = crea_report_totale(
         nome=st.session_state['last_nome'],
         dati_ai=st.session_state['last_ai'],
@@ -1066,30 +1066,29 @@ if 'last_ai' in st.session_state:
         ffmi=st.session_state.get('last_ffmi', 0)
     )
     
-    # 3. FUNZIONE CALLBACK SEQUENZIALE (Definita nel posto giusto)
+    # 3. FUNZIONE CALLBACK SEQUENZIALE
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
         nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
-            st.toast("☁️ Upload su Drive in corso...", icon="oss") 
+            st.toast("☁️ Upload su Drive in corso...", icon="🚀") 
             
             # FASE 1: UPLOAD SU DRIVE
             link_generato = upload_to_drive(html_report, f"AREA199_{nome_atleta}.html")
             
             if link_generato:
                 # FASE 2: AGGIORNAMENTO DATABASE
-                # Usiamo i nomi espliciti (link_drive=...) per evitare che Python si confonda
                 ok = aggiorna_db_glide(
                     nome=nome_atleta, 
                     email=mail_sicura, 
                     dati_ai=res, 
-                    link_drive=link_generato, # <--- Questo assicura che il link vada nella colonna giusta
+                    link_drive=link_generato, # <--- Passa la stringa corretta
                     note_coach=res.get('warning_tecnico','')
                 )
                 if ok:
-                    st.toast(f"✅ SINCRONIZZATO: {mail_sicura}", icon="🚀")
+                    st.toast(f"✅ SINCRONIZZATO: {mail_sicura}", icon="🔥")
                     st.balloons()
                 else:
                     st.error("⚠️ Errore Database Sheets.")
