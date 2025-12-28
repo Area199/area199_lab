@@ -204,7 +204,7 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # ==============================================================================
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
-    """Sincronizzazione Serverless con Scopes Espansi."""
+    """Sincronizzazione Serverless: Salva i dati grezzi in Colonna H."""
     import json
     scheda_testo = json.dumps(dati_ai)
     
@@ -220,13 +220,11 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     ]
     
     try:
-        # --- CORREZIONE QUI SOTTO: AGGIUNTO LO SCOPE DRIVE ---
+        # AGGIUNTO 'drive' PER PERMETTERE LA RICERCA DEL FILE PER NOME
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        # -----------------------------------------------------
-        
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         client = gspread.authorize(creds)
@@ -241,23 +239,23 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
 def recupera_protocollo_da_db(email_target):
     """Legge la colonna Link_Scheda (H) come sorgente dati JSON."""
     try:
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        # ANCHE QUI SERVONO ENTRAMBI GLI SCOPES
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
         client = gspread.authorize(creds)
         sheet = client.open("AREA199_DB").sheet1
         
-        # Ottieni tutti i record come dizionari
         records = sheet.get_all_records()
         df = pd.DataFrame(records)
         
-        # Filtra per email (case insensitive)
-        # Assicurati che nel foglio la colonna sia scritta esattamente "Email_Cliente"
         user_data = df[df['Email_Cliente'].str.lower() == email_target.lower()]
         
         if not user_data.empty:
-            # Prende l'ultimo record inserito
             last_record = user_data.iloc[-1]
-            raw_json = last_record['Link_Scheda'] # Colonna H
+            raw_json = last_record['Link_Scheda'] 
             return json.loads(raw_json), last_record['Nome']
             
         return None, None
