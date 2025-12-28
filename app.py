@@ -769,16 +769,26 @@ if btn_gen:
         st.error("❌ ERRORE: Chiave API mancante!")
     else:
         with st.spinner("CALCOLO VETTORIALE SOMATOTIPO & AI GENERATION..."):
-            dati_totali = { "nome": nome, "eta": eta, "sesso": sesso, "goal": goal, "misure": misure, "giorni": giorni_allenamento, "durata_target": durata_sessione, "limitazioni": limitazioni, "is_multifreq": is_multifreq, "custom_instructions": custom_instructions }
             
+            # 1. Preparazione Dati
+            dati_totali = { 
+                "nome": nome, "eta": eta, "sesso": sesso, "goal": goal, 
+                "misure": misure, "giorni": giorni_allenamento, 
+                "durata_target": durata_sessione, "limitazioni": limitazioni, 
+                "is_multifreq": is_multifreq, "custom_instructions": custom_instructions 
+            }
+            
+            # 2. Chiamata AI
             res_ai = genera_protocollo_petruzzi(dati_totali, api_key_input)
             
             if "errore" not in res_ai:
+                # Salvataggio Sessione
                 st.session_state['last_ai'] = res_ai
                 st.session_state['last_nome'] = nome
                 st.session_state['last_limitazioni'] = limitazioni
                 st.session_state['last_email_sicura'] = email 
                 
+                # Calcoli Biometrici
                 somato_str, ffmi_val, bf_val = calcola_somatotipo_scientifico(peso, alt, polso, addome, fianchi, collo, sesso)
                 whr_calc = calcola_whr(addome, fianchi)
                 
@@ -787,16 +797,46 @@ if btn_gen:
                 st.session_state['last_whr'] = whr_calc
                 st.session_state['last_ffmi'] = ffmi_val
 
+                # ---------------------------------------------------------
+                # QUI VEDI I COMMENTI E L'ANALISI PRIMA DI INVIARE
+                # ---------------------------------------------------------
                 st.markdown(f"## PROTOCOLLO: {res_ai.get('mesociclo','').upper()}")
+                
+                # Metriche
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("BF Navy", f"{bf_val}%")
                 c2.metric("FFMI", f"{ffmi_val}")
                 c3.metric("Somatotipo", somato_str.split()[0])
                 c4.metric("WHR", f"{whr_calc}", delta="Risk" if whr_calc > 0.9 else "Ok", delta_color="inverse")
                 
-                if limitazioni: st.markdown(f"<div class='warning-box'>⚠️ <b>INFORTUNI RILEVATI:</b> {limitazioni}</div>", unsafe_allow_html=True)
+                # BOX ANALISI TATTICA (VISIBILI SUBITO)
+                st.markdown("---")
+                c_ana, c_warn = st.columns(2)
+                
+                with c_ana:
+                    st.markdown(f"""
+                    <div style="background-color:#1a1a1a; padding:15px; border-left:4px solid #990000;">
+                        <b style="color:#ff0000; font-size:12px;">ANALISI CLINICA (FEEDBACK):</b><br>
+                        <i style="color:#dddddd; font-size:14px;">"{res_ai.get('analisi_clinica','N/D')}"</i>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with c_warn:
+                    st.markdown(f"""
+                    <div style="background-color:#330000; padding:15px; border:1px solid #ff0000;">
+                        <b style="color:#ffcccc; font-size:12px;">⚠️ ORDINE TECNICO:</b><br>
+                        <b style="color:#ffffff; font-size:16px;">{res_ai.get('warning_tecnico','N/D').upper()}</b>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                # BLOCCO VISUALIZZAZIONE SCHEDA COACH (CON IMMAGINI)
+                if res_ai.get('cardio_protocol'):
+                    st.info(f"🔥 **CARDIO:** {res_ai.get('cardio_protocol')}")
+
+                st.markdown("---")
+
+                # ---------------------------------------------------------
+                # ANTEPRIMA SCHEDA CON IMMAGINI (FIX VISUALIZZAZIONE)
+                # ---------------------------------------------------------
                 for day, ex_list in res_ai.get('tabella', {}).items():
                     with st.expander(f"🔴 {day.upper()}", expanded=True):
                         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
@@ -805,31 +845,25 @@ if btn_gen:
                         for ex in lista:
                             if not isinstance(ex, dict): continue
                             
-                            # LOGICA RECUPERO IMMAGINI
+                            # Recupero Immagini per Anteprima
                             nome_ex = ex.get('Esercizio','')
-                            img_search = nome_ex.split('(')[0].strip()
-                            img1, img2 = trova_img(img_search, df_img)
+                            clean_name = nome_ex.split('(')[0].strip()
+                            img1, img2 = trova_img(clean_name, df_img)
                             
-                            # LAYOUT GRAFICO
-                            c_img, c_txt = st.columns([1, 4])
-                            with c_img:
+                            col_img, col_txt = st.columns([1, 4])
+                            
+                            with col_img:
                                 if img1: st.image(img1, use_container_width=True)
-                                if img2: st.image(img2, use_container_width=True)
                             
-                            with c_txt:
-                                st.markdown(f"### {nome_ex}")
-                                st.caption(f"TARGET: {ex.get('Target','GLOBAL')}")
+                            with col_txt:
+                                st.markdown(f"**{nome_ex}**")
                                 if "Cardio" not in nome_ex:
-                                    col_a, col_b, col_c = st.columns(3)
-                                    col_a.markdown(f"**SETS:** {ex.get('Sets','?')}")
-                                    col_b.markdown(f"**REPS:** {ex.get('Reps','?')}")
-                                    col_c.markdown(f"**REC:** {ex.get('Recupero','?')}")
-                                    st.markdown(f"⏱️ **TUT:** `{ex.get('TUT','?')}`")
-                                
-                                st.info(f"💀 **EXECUTION:** {ex.get('Esecuzione','')}")
-                                st.warning(f"⚠️ **FOCUS:** {ex.get('Note','')}")
+                                    st.caption(f"{ex.get('Sets','?')} x {ex.get('Reps','?')} | Rec: {ex.get('Recupero','?')} | TUT: {ex.get('TUT','?')}")
+                                st.markdown(f"<span style='color:#888; font-size:12px;'>💡 {ex.get('Esecuzione','')}</span>", unsafe_allow_html=True)
                             
                             st.divider()
+            else: 
+                st.error(res_ai['errore'])
 
 # --- EXPORT & SYNC SECTION ---
 if 'last_ai' in st.session_state:
