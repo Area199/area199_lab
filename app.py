@@ -135,47 +135,37 @@ if not access_granted:
 
 # Se il codice prosegue, l'accesso è autorizzato.
 # Se l'utente è un ATLETA, mostriamo solo i suoi dati e fermiamo l'app.
+# SEZIONE ATLETA (Login via Email)
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
-    # Usiamo il nome inserito per filtrare
-    atleta_nome = st.text_input("Inserisci il tuo Nome e Cognome (esatto)")
+    email_login = st.text_input("Inserisci la tua Email per accedere").strip()
     
-    if atleta_nome:
-        # 1. Carichiamo lo storico
-        df_hist = leggi_storico(atleta_nome)
-        
-        if df_hist is not None and not df_hist.empty:
-            st.success(f"Dati sincronizzati per: {atleta_nome}")
+    if st.button("🔄 CARICA IL MIO PROTOCOLLO"):
+        if email_login:
+            dati_scheda, nome_atleta = recupera_protocollo_da_db(email_login)
             
-            # 2. Prendiamo l'ULTIMA riga (il protocollo più recente)
-            ultima_scheda = df_hist.iloc[-1] 
-            
-            # 3. MOSTRA I GRAFICI (Progresso)
-            col1, col2 = st.columns(2)
-            with col1:
-                g_p = grafico_trend(df_hist, "Peso", "#ff0000")
-                if g_p: st.plotly_chart(g_p, use_container_width=True)
-            with col2:
-                g_v = grafico_trend(df_hist, "Vita", "#ffff00")
-                if g_v: st.plotly_chart(g_v, use_container_width=True)
-
-            # 4. IL TASTO DOWNLOAD (Fondamentale)
-            # Verifichiamo se esiste la colonna col link alla scheda caricata su Drive
-            if 'Link_Scheda' in ultima_scheda and pd.notna(ultima_scheda['Link_Scheda']):
-                st.markdown(f"""
-                    <div style="background:#111; padding:20px; border:1px solid #ff0000; border-radius:10px; text-align:center;">
-                        <h3 style="color:#fff; margin-bottom:15px;">IL TUO NUOVO PROTOCOLLO È PRONTO</h3>
-                        <a href="{ultima_scheda['Link_Scheda']}" target="_blank">
-                            <button style="width:100%; padding:15px; background-color:#ff0000; color:white; border:none; border-radius:10px; font-weight:bold; font-size:18px; cursor:pointer;">
-                                📥 SCARICA SCHEDA (PDF/HTML)
-                            </button>
-                        </a>
-                    </div>
-                """, unsafe_allow_html=True)
+            if dati_scheda:
+                st.success(f"Bentornato, {nome_atleta}. Protocollo rigenerato dal Cloud.")
+                
+                # Rigenera HTML al volo
+                html_live = crea_report_totale(
+                    nome=nome_atleta,
+                    dati_ai=dati_scheda,
+                    grafici_html_list=[], # I grafici richiederebbero lo storico locale, opzionale
+                    df_img=ottieni_db_immagini(),
+                    limitazioni="Vedi Note Tecniche",
+                    bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D"
+                )
+                
+                st.download_button(
+                    label="📥 DOWNLOAD SCHEDA UFFICIALE",
+                    data=html_live,
+                    file_name=f"AREA199_{nome_atleta}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
             else:
-                st.warning("⚠️ Protocollo in fase di elaborazione. Il link non è ancora disponibile nel database.")
-        else:
-            st.error("❌ Nessun dato trovato. Assicurati che il Coach abbia archiviato almeno una scheda con questo nome.")
+                st.error("Nessun protocollo trovato per questa email.")
     st.stop()
 # --- CONFIGURAZIONE COSTANTI ---
 DB_CLIENTI = "database_clienti"
@@ -214,8 +204,11 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # ==============================================================================
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
-    """Sincronizzazione database Google Sheets con colonna Link Drive."""
-    # COSTRUZIONE RIGA: Ogni elemento deve essere separato da una virgola
+    """Sincronizzazione Serverless: Salva i dati grezzi in Colonna H."""
+    # Convertiamo la scheda in testo per salvarla direttamente nel foglio
+    import json
+    scheda_json = json.dumps(dati_ai) 
+    
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -224,23 +217,48 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         dati_ai.get('cardio_protocol', ''),
         note_coach,
         dati_ai.get('analisi_clinica', ''),
-        link_drive
+        scheda_json # <--- QUI SALVIAMO I DATI, NON IL LINK
     ]
     
     try:
-        # Configurazione Scopes e Credenziali dai Secrets
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Apertura Foglio e Append
         sheet = client.open("AREA199_DB").sheet1 
         sheet.append_row(nuova_riga)
         return True
     except Exception as e:
-        st.error(f"ERRORE SYNC: {e}")
+        st.error(f"ERRORE DB: {e}")
         return False
+
+def recupera_protocollo_da_db(email_target):
+    """Legge la colonna Link_Scheda (H) come sorgente dati JSON."""
+    try:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet = client.open("AREA199_DB").sheet1
+        
+        # Ottieni tutti i record come dizionari
+        records = sheet.get_all_records()
+        df = pd.DataFrame(records)
+        
+        # Filtra per email (case insensitive)
+        # Assicurati che nel foglio la colonna sia scritta esattamente "Email_Cliente"
+        user_data = df[df['Email_Cliente'].str.lower() == email_target.lower()]
+        
+        if not user_data.empty:
+            # Prende l'ultimo record inserito
+            last_record = user_data.iloc[-1]
+            raw_json = last_record['Link_Scheda'] # Colonna H
+            return json.loads(raw_json), last_record['Nome']
+            
+        return None, None
+    except Exception as e:
+        st.error(f"Errore lettura Cloud: {e}")
+        return None, None
 
 def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rvMxyUYX1qa"):
     """
@@ -984,37 +1002,41 @@ if 'last_ai' in st.session_state:
     )
 
     # 3. DEFINIZIONE CALLBACK AZIONE CLOUD
+   # ... (questo va alla fine della sezione IF IS_COACH) ...
+
+    # 3. FUNZIONE DI INVIO DIRETTO (SENZA DRIVE)
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
+        nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
-            st.toast("📤 Caricamento Report su Google Drive...", icon="☁️")
-            link_generato = upload_to_drive(html_report, f"AREA199_{nome_atleta}.html")
-            
-            if link_generato:
+            with st.spinner("💾 Salvataggio dati nel Database (Bypass Drive)..."):
+                # Chiamiamo l'aggiornamento senza passare link_drive
                 ok = aggiorna_db_glide(
-                    nome_atleta, 
-                    mail_sicura, 
-                    res, 
-                    link_drive=link_generato, 
+                    nome=nome_atleta, 
+                    email=mail_sicura, 
+                    dati_ai=res, 
                     note_coach=res.get('warning_tecnico','')
                 )
                 if ok:
-                    st.toast(f"✅ PROTOCOLLO SINCRONIZZATO", icon="🚀")
+                    st.toast(f"✅ DATI SALVATI: {mail_sicura}", icon="🚀")
+                    st.success("Protocollo archiviato nel Database.")
                 else:
-                    st.error("⚠️ Errore scrittura database.")
-            else:
-                st.error("⚠️ Fallimento Upload Drive.")
+                    st.error("Errore scrittura Database.")
         else:
-            st.error("⚠️ Dati mancanti (Email/Risultato AI) per la sincronizzazione.")
+            st.warning("Email non trovata. Inseriscila nel campo Email Cliente.")
 
-    # 4. DOWNLOAD BUTTON (Attiva il callback)
+    # 4. IL BOTTONE
     st.download_button(
-        label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
+        label="📥 SCARICA COPIA LOCALE (HTML)", 
         data=html_report, 
-        file_name=f"AREA199_{nome_atleta}.html", 
-        mime="text/html",
-        use_container_width=True,
-        on_click=azione_invio_glide 
+        file_name=f"AREA199_{st.session_state['last_nome']}.html", 
+        mime="text/html"
+    )
+    
+    st.button(
+        "☁️ INVIA AL DATABASE (CLICCA QUI)", 
+        on_click=azione_invio_glide, 
+        type="primary"
     )
