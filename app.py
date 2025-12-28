@@ -328,8 +328,8 @@ def recupera_protocollo_da_db(email_target):
 
 def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rvMxyUYX1qa"):
     """
-    Carica il report HTML su Google Drive in modalità DIRETTA (No Resumable).
-    Bypassa l'errore di quota dei Service Accounts per file piccoli.
+    Carica su Drive convertendo in GOOGLE DOC per aggirare il blocco Quota 0.
+    I file nativi Google Docs non consumano spazio di archiviazione del Service Account.
     """
     try:
         s_info = st.secrets["gcp_service_account"]
@@ -337,20 +337,26 @@ def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rv
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         service = build('drive', 'v3', credentials=creds)
         
-        # Salvataggio temporaneo
+        # 1. Preparazione File Temporaneo
         temp_path = f"temp_{file_name}"
         with open(temp_path, "w", encoding="utf-8") as f:
             f.write(file_content)
 
+        # 2. METADATA TRUCCO: Diciamo a Google che il file finale sarà un DOC
         file_metadata = {
             'name': file_name,
-            'parents': [folder_id]
+            'parents': [folder_id],
+            'mimeType': 'application/vnd.google-apps.document' # <--- IL TRUCCO È QUI
         }
         
-        # --- FIX CRITICO: resumable=False ---
-        # Questo invia il file in un colpo solo, evitando il check della quota del bot
-        media = MediaFileUpload(temp_path, mimetype='text/html', resumable=False)
+        # 3. UPLOAD: Carichiamo l'HTML, Google lo converte in Doc
+        media = MediaFileUpload(
+            temp_path, 
+            mimetype='text/html', # La sorgente è HTML
+            resumable=True
+        )
         
+        # Nota: Rimossi parametri 'supportsAllDrives' che causano errori su account personali
         file = service.files().create(
             body=file_metadata, 
             media_body=media, 
@@ -359,7 +365,7 @@ def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rv
         
         file_id = file.get('id')
 
-        # Permessi di visualizzazione pubblica
+        # 4. PERMESSI: Rendiamo il Doc visibile a chiunque abbia il link
         service.permissions().create(
             fileId=file_id, 
             body={'type': 'anyone', 'role': 'viewer'}
@@ -367,10 +373,11 @@ def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rv
         
         if os.path.exists(temp_path): os.remove(temp_path)
         
-        # Link diretto
-        return f"https://drive.google.com/uc?export=download&id={file_id}"
+        # Restituiamo il link al Google Doc (non più download diretto, ma visualizzazione Doc)
+        return f"https://docs.google.com/document/d/{file_id}/edit"
+        
     except Exception as e:
-        st.error(f"ERRORE CRITICO DRIVE: {e}")
+        st.error(f"ERRORE DRIVE (Conversion Hack): {e}")
         return None
 # ==============================================================================
 # 2. LOGICA MATEMATICA & BIOMETRIA AVANZATA
