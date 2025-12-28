@@ -261,10 +261,12 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # ==============================================================================
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
-    """Sincronizzazione Serverless: Salva i dati grezzi in Colonna H."""
-    import json
-    scheda_testo = json.dumps(dati_ai)
+    """Sincronizzazione database Google Sheets con Link Attivo."""
     
+    # 1. COSTRUZIONE FORMULA HYPERLINK
+    # Se c'è un link, creiamo la formula che Sheets trasforma in tasto blu
+    valore_link = f'=HYPERLINK("{link_drive}", "{link_drive}")' if link_drive else ""
+
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -273,24 +275,25 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         dati_ai.get('cardio_protocol', ''),
         note_coach,
         dati_ai.get('analisi_clinica', ''),
-        scheda_testo 
+        valore_link  # <--- INSERIAMO LA FORMULA, NON IL TESTO
     ]
     
     try:
-        # AGGIUNTO 'drive' PER PERMETTERE LA RICERCA DEL FILE PER NOME
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         client = gspread.authorize(creds)
         
         sheet = client.open("AREA199_DB").sheet1 
-        sheet.append_row(nuova_riga)
+        
+        # 2. INVIO CON PARSING DELLE FORMULE (FONDAMENTALE)
+        # 'USER_ENTERED' dice a Google: "Tratta questo testo come se lo avessi digitato io"
+        # Questo attiva il riconoscimento della formula =HYPERLINK
+        sheet.append_row(nuova_riga, value_input_option='USER_ENTERED')
+        
         return True
     except Exception as e:
-        st.error(f"ERRORE SCRITTURA DB: {e}")
+        st.error(f"ERRORE SYNC: {e}")
         return False
 
 def recupera_protocollo_da_db(email_target):
