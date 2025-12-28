@@ -1,3 +1,8 @@
+with open(__file__, "rb") as f:
+    for i, line in enumerate(f, 1):
+        if b"\xa0" in line:
+            print(i, line)
+
 import streamlit as st
 import pandas as pd
 import os
@@ -338,5 +343,4 @@ if 'last_ai' in st.session_state:
             st.success("✅ SALVATO SU DB")
         else: st.error("Errore DB")
         
-
     st.download_button("📥 SCARICA E SALVA SU DB", html, f"AREA199_{st.session_state.get('last_nome','scheda')}.html", "text/html", on_click=azione_invio)
