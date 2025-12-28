@@ -295,7 +295,7 @@ if pwd == "PETRUZZI199":
     if btn:
         som, ff, bf = calcola_somatotipo_scientifico(peso, alt, polso, vita, fianchi, collo, sesso)
         
-        # Mapping della scelta per l'AI
+        # ASSICURATI CHE QUESTA RIGA ESISTA E PRENDA IL VALORE DAL MULTISELECT
         tipo_freq = "MULTIFREQUENZA" if multi_freq else "MONOFREQUENZA"
         
         input_ai = {
@@ -303,14 +303,14 @@ if pwd == "PETRUZZI199":
             "durata_target": durata, 
             "meta_bio": f"{som}, FFMI {ff}, BF {bf}%", 
             "limitazioni": limitazioni,
-            "giorni_selezionati": giorni,
-            "frequenza_target": tipo_freq,  # <-- NUOVO PARAMETRO
+            "giorni_selezionati": giorni,       # <--- QUESTA CHIAVE DEVE ESSERE PRESENTE
+            "frequenza_target": tipo_freq,
             "custom_instructions": ""
         }
         
-        # Il prompt dell'AI userà questa informazione per decidere lo split
-        res = genera_protocollo_petruzzi(input_ai, api)
-        # ... resto del codice
+        with st.spinner("ANALISI BIOMECCANICA IN CORSO..."):
+            res = genera_protocollo_petruzzi(input_ai, api)
+            # ... resto del codice
         
         if "errore" not in res:
             st.session_state['ai'] = res; st.session_state['n'] = n; st.session_state['e'] = e
