@@ -938,11 +938,18 @@ if 'last_ai' in st.session_state:
         except: pass
 
     # 2. GENERAZIONE REPORT HTML
-    html_report = crea_report_totale(
-        st.session_state['last_nome'], st.session_state['last_ai'], grafici_html, df_img, 
-        st.session_state.get('last_limitazioni', ''), st.session_state.get('last_bf', 0), 
-        st.session_state.get('last_somato', 'N/D'), st.session_state.get('last_whr', 0),
-        st.session_state.get('last_ffmi', 0)
+   html_report = crea_report_totale(
+    nome=st.session_state['last_nome'],
+    dati_ai=st.session_state['last_ai'],
+    grafici_html_list=grafici_html,
+    df_img=df_img,
+    limitazioni=st.session_state.get('last_limitazioni', ''),
+    bf=st.session_state.get('last_bf', 0),
+    somatotipo=st.session_state.get('last_somato', 'N/D'),
+    whr=st.session_state.get('last_whr', 0),
+    ffmi=st.session_state.get('last_ffmi', 0)
+)
+
     )
     
     # 3. FUNZIONE CALLBACK CORRETTA (SEQUENZIALE)
