@@ -506,7 +506,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
     - Se ci sono limitazioni fisiche indicate, evita tassativamente esercizi che stressano quella zona.
 
     4. CARDIO & METABOLIC:
-    - Ogni riferimento al cardio deve essere in %FTP E IN ZONE Z1/Z2.
+    - Ogni riferimento al cardio deve essere in %FTP, IN RANGEFC E IN ZONE Z1/Z2.
 
     *** ISTRUZIONI TATTICHE EXTRA ***
     "{dati_input['custom_instructions']}"
@@ -573,17 +573,30 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     workout_html = ""
     alert_html = f"<div class='warning-box'>⚠️ <b>LIMITAZIONI E INFORTUNI:</b> {limitazioni}</div>" if limitazioni else ""
     
-    # Blocco Biometrico
+    # 1. RECUPERO INTELLIGENTE DEI DATI (Preventivo N/D)
+    # Se il dato manca (N/D), proviamo a estrarlo dai metadati salvati dentro il JSON dell'AI
+    meta = dati_ai.get('meta_biometria', {})
+    
+    # Logica di fallback: Se l'argomento è nullo/N/D, prendi dal JSON
+    if str(somatotipo) in ["N/D", "None", ""] and 'somato' in meta: somatotipo = meta['somato']
+    if str(ffmi) in ["N/D", "None", "0", ""] and 'ffmi' in meta: ffmi = meta['ffmi']
+    if str(bf) in ["N/D", "None", "0", ""] and 'bf' in meta: bf = meta['bf']
+    if str(whr) in ["N/D", "None", "0", ""] and 'whr' in meta: whr = meta['whr']
+
+    # Pulizia stringa somatotipo (rimuove parentesi se presenti)
+    somato_clean = str(somatotipo).split('(')[0].strip() if somatotipo else "N/D"
+
+    # 2. BLOCCO BIOMETRICO (SOLO DATI NUMERICI - NESSUN COMMENTO QUI)
     morfo_html = f"""
-<div style='display:flex; justify-content:space-between; background:#080808; padding:15px; border:1px solid #333; margin-bottom:15px; font-family:monospace;'>
-    <div><span style='color:#666; font-size:10px;'>SOMATOTIPO</span><br><b style='color:#fff;'>{somatotipo.split('|')[0]}</b></div>
-    <div><span style='color:#666; font-size:10px;'>FFMI</span><br><b style='#ff0000; font-size:16px;'>{ffmi}</b></div>
-    <div><span style='color:#666; font-size:10px;'>BF%</span><br><b style='color:#fff;'>{bf}%</b></div>
-    <div><span style='color:#666; font-size:10px;'>WHR</span><br><b style='color:#fff;'>{whr}</b></div>
-</div>
-<div class='analysis-text'>{dati_ai.get('analisi_clinica','')}</div>
-"""
-    # Generazione Tabella Allenamento
+    <div style='display:flex; justify-content:space-between; background:#080808; padding:15px; border:1px solid #333; margin-bottom:15px; font-family:monospace;'>
+        <div style='text-align:center;'><span style='color:#666; font-size:10px;'>SOMATOTIPO</span><br><b style='color:#fff; font-size:14px;'>{somato_clean}</b></div>
+        <div style='text-align:center;'><span style='color:#666; font-size:10px;'>FFMI</span><br><b style='color:#ff0000; font-size:16px;'>{ffmi}</b></div>
+        <div style='text-align:center;'><span style='color:#666; font-size:10px;'>BF%</span><br><b style='color:#fff; font-size:14px;'>{bf}%</b></div>
+        <div style='text-align:center;'><span style='color:#666; font-size:10px;'>WHR</span><br><b style='color:#fff; font-size:14px;'>{whr}</b></div>
+    </div>
+    """
+    
+    # 3. GENERAZIONE TABELLA ESERCIZI (Con Immagini)
     for day, ex_list in dati_ai.get('tabella', {}).items():
         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
         durata = stima_durata_sessione(lista)
@@ -613,6 +626,82 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             """
         workout_html += "</table><br>"
 
+    # 4. HTML FINALE (ANALISI CLINICA INSERITA UNA VOLTA SOLA)
+    html = f"""
+    <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+    body {{ font-family: 'Helvetica', sans-serif; background-color: #050505; color: #d0d0d0; padding: 20px; }}
+    .header {{ text-align: center; border-bottom: 3px solid #990000; padding-bottom: 20px; margin-bottom: 30px; }}
+    h1 {{ color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 2px; font-weight:900; }} 
+    h2 {{ color: #fff; border-left: 5px solid #990000; padding-left: 15px; margin-top: 40px; font-size: 18px; text-transform: uppercase; }}
+    .box {{ background: #111; padding: 20px; border: 1px solid #222; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }}
+    .warning-box {{ border: 1px solid #ff0000; background-color: #330000; padding: 15px; color: #ffcccc; margin-bottom: 20px; font-weight: bold; text-align:center; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 10px; background: #161616; border: 1px solid #333; }}
+    th {{ background: #900; color: #fff; padding: 8px; font-size: 10px; text-transform: uppercase; }} 
+    td {{ padding: 10px; border-bottom: 1px solid #333; vertical-align: middle; }}
+    .ex-img {{ width: 60px; height:auto; margin: 2px; border: 1px solid #444; opacity: 0.9; }}
+    .day-header {{ color: #990000; margin-top: 40px; border-bottom: 1px solid #333; padding-bottom: 5px; font-size: 16px; }}
+    .footer {{ margin-top: 60px; text-align: center; color: #444; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; border-top:1px solid #222; padding-top:20px; }}
+    .analysis-text {{ font-size: 13px; line-height: 1.6; color: #ddd; font-style: italic; border-left: 3px solid #555; padding-left: 15px; margin: 10px 0; }}
+    </style></head><body>
+    
+    <div class="header"><h1>AREA 199 LAB</h1><p style="color:#888; font-size:10px;">ATLETA: {nome.upper()} | DATA: {oggi}</p></div>
+
+    <div class="box">
+        <h2 style="margin-top:0;">EXECUTIVE SUMMARY</h2>
+        {alert_html}
+        {morfo_html} <p style="color:#990000; font-weight:bold; font-size:12px;">FASE: {dati_ai.get('mesociclo','').upper()}</p>
+        
+        <div class="analysis-text">"{dati_ai.get('analisi_clinica','')}"</div>
+        <br>
+        
+        <p style="color:#ff4444; font-weight:bold;">⚠️ ORDINI: <span style="color:#ddd; font-weight:normal;">{dati_ai.get('warning_tecnico','')}</span></p>
+        <p style="color:#ff4444; font-weight:bold;">🔥 CARDIO: <span style="color:#ddd; font-weight:normal;">{dati_ai.get('cardio_protocol','')}</span></p>
+    </div>
+
+    <h2>PIANO OPERATIVO</h2>
+    {workout_html}
+
+    <div class="box">
+        <h2>STORICO PROGRESSI</h2>
+        {"".join([g for g in grafici_html_list]) if grafici_html_list else "<p style='color:#666; text-align:center;'>Dati insufficienti per trend.</p>"}
+    </div>
+    
+    <div class="footer">DOTT. ANTONIO PETRUZZI - DIRETTORE TECNICO</div>
+    </body></html>
+    """
+    return html
+    
+    # 3. GENERAZIONE TABELLA
+    for day, ex_list in dati_ai.get('tabella', {}).items():
+        lista = ex_list if isinstance(ex_list, list) else ex_list.values()
+        durata = stima_durata_sessione(lista)
+        workout_html += f"<h3 class='day-header'>{day.upper()} (Stimato: ~{durata} min)</h3>"
+        workout_html += "<table style='width:100%'><tr style='background:#900; color:white;'><th style='width:15%'>IMG</th><th style='width:25%'>ESERCIZIO</th><th style='width:15%'>PARAMETRI</th><th style='width:45%'>COACHING CUES</th></tr>"
+        
+        for ex in lista:
+            if not isinstance(ex, dict): continue
+            nome_ex = ex.get('Esercizio','N/D')
+            img_search_name = nome_ex.split('(')[0].strip()
+            img1, img2 = trova_img(img_search_name, df_img)
+            
+            img_html = ""
+            if img1: img_html += f"<img src='{img1}' class='ex-img'>"
+            if img2: img_html += f"<img src='{img2}' class='ex-img'>"
+            
+            sets_reps = "CARDIO" if "Cardio" in nome_ex else f"<b style='font-size:14px; color:#fff'>{ex.get('Sets','?')}</b> x <b style='font-size:14px; color:#fff'>{ex.get('Reps','?')}</b>"
+            rec_tut = "N/A" if "Cardio" in nome_ex else f"Rec: {ex.get('Recupero','?')}s<br><span style='font-size:10px; color:#888'>TUT: {ex.get('TUT','?')}</span>"
+
+            workout_html += f"""
+            <tr>
+                <td style='text-align:center;'>{img_html}</td>
+                <td><b style='color:#ff0000; font-size:14px;'>{nome_ex}</b><br><i style='font-size:11px; color:#ccc'>{ex.get('Target','')}</i></td>
+                <td style='text-align:center; background:#111; border-left:1px solid #333; border-right:1px solid #333;'>{sets_reps}<br><hr style='border:0; border-top:1px solid #333; margin:4px 0;'>{rec_tut}</td>
+                <td style='font-size:12px; line-height:1.4;'><b>Esecuzione:</b> {ex.get('Esecuzione','')}<br><span style='color:#ff6666; font-weight:bold;'>Focus: {ex.get('Note','')}</span></td>
+            </tr>
+            """
+        workout_html += "</table><br>"
+
+    # 4. HTML FINALE
     html = f"""
     <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
     body {{ font-family: 'Helvetica', sans-serif; background-color: #050505; color: #d0d0d0; padding: 20px; }}
@@ -636,8 +725,10 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
         <h2 style="margin-top:0;">EXECUTIVE SUMMARY</h2>
         {alert_html}{morfo_html}
         <p style="color:#990000; font-weight:bold; font-size:12px;">FASE: {dati_ai.get('mesociclo','').upper()}</p>
+        
         <div class="analysis-text">"{dati_ai.get('analisi_clinica','')}"</div>
         <br>
+        
         <p style="color:#ff4444; font-weight:bold;">⚠️ ORDINI: <span style="color:#ddd; font-weight:normal;">{dati_ai.get('warning_tecnico','')}</span></p>
         <p style="color:#ff4444; font-weight:bold;">🔥 CARDIO: <span style="color:#ddd; font-weight:normal;">{dati_ai.get('cardio_protocol','')}</span></p>
     </div>
@@ -654,7 +745,6 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     </body></html>
     """
     return html
-
 # ==============================================================================
 # MAIN APP FLOW
 # ==============================================================================
@@ -770,7 +860,11 @@ if btn_gen:
     else:
         with st.spinner("CALCOLO VETTORIALE SOMATOTIPO & AI GENERATION..."):
             
-            # 1. Preparazione Dati
+            # 1. Calcoli Biometrici (Fatti SUBITO per averli pronti)
+            somato_str, ffmi_val, bf_val = calcola_somatotipo_scientifico(peso, alt, polso, addome, fianchi, collo, sesso)
+            whr_calc = calcola_whr(addome, fianchi)
+
+            # 2. Preparazione Dati AI
             dati_totali = { 
                 "nome": nome, "eta": eta, "sesso": sesso, "goal": goal, 
                 "misure": misure, "giorni": giorni_allenamento, 
@@ -778,89 +872,72 @@ if btn_gen:
                 "is_multifreq": is_multifreq, "custom_instructions": custom_instructions 
             }
             
-            # 2. Chiamata AI
+            # 3. Chiamata AI
             res_ai = genera_protocollo_petruzzi(dati_totali, api_key_input)
             
             if "errore" not in res_ai:
-                # Salvataggio Sessione
+                # 4. INIEZIONE BIOMETRIA NEL JSON (Così il report non dà N/D)
+                res_ai['meta_biometria'] = {
+                    'somato': somato_str,
+                    'bf': bf_val,
+                    'ffmi': ffmi_val,
+                    'whr': whr_calc
+                }
+
+                # 5. Salvataggio Sessione
                 st.session_state['last_ai'] = res_ai
                 st.session_state['last_nome'] = nome
                 st.session_state['last_limitazioni'] = limitazioni
                 st.session_state['last_email_sicura'] = email 
                 
-                # Calcoli Biometrici
-                somato_str, ffmi_val, bf_val = calcola_somatotipo_scientifico(peso, alt, polso, addome, fianchi, collo, sesso)
-                whr_calc = calcola_whr(addome, fianchi)
-                
+                # Queste servono per i metric delta immediati
                 st.session_state['last_bf'] = bf_val
                 st.session_state['last_somato'] = somato_str
                 st.session_state['last_whr'] = whr_calc
                 st.session_state['last_ffmi'] = ffmi_val
 
                 # ---------------------------------------------------------
-                # QUI VEDI I COMMENTI E L'ANALISI PRIMA DI INVIARE
+                # ANTEPRIMA COACH
                 # ---------------------------------------------------------
                 st.markdown(f"## PROTOCOLLO: {res_ai.get('mesociclo','').upper()}")
                 
-                # Metriche
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("BF Navy", f"{bf_val}%")
                 c2.metric("FFMI", f"{ffmi_val}")
                 c3.metric("Somatotipo", somato_str.split()[0])
                 c4.metric("WHR", f"{whr_calc}", delta="Risk" if whr_calc > 0.9 else "Ok", delta_color="inverse")
                 
-                # BOX ANALISI TATTICA (VISIBILI SUBITO)
                 st.markdown("---")
                 c_ana, c_warn = st.columns(2)
-                
                 with c_ana:
-                    st.markdown(f"""
-                    <div style="background-color:#1a1a1a; padding:15px; border-left:4px solid #990000;">
-                        <b style="color:#ff0000; font-size:12px;">ANALISI CLINICA (FEEDBACK):</b><br>
-                        <i style="color:#dddddd; font-size:14px;">"{res_ai.get('analisi_clinica','N/D')}"</i>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
+                    st.markdown(f"<div class='analysis-preview'><b>ANALISI CLINICA:</b><br><i>{res_ai.get('analisi_clinica','')}</i></div>", unsafe_allow_html=True)
                 with c_warn:
-                    st.markdown(f"""
-                    <div style="background-color:#330000; padding:15px; border:1px solid #ff0000;">
-                        <b style="color:#ffcccc; font-size:12px;">⚠️ ORDINE TECNICO:</b><br>
-                        <b style="color:#ffffff; font-size:16px;">{res_ai.get('warning_tecnico','N/D').upper()}</b>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"<div class='command-preview'><b>ORDINE TECNICO:</b><br>{res_ai.get('warning_tecnico','').upper()}</div>", unsafe_allow_html=True)
 
                 if res_ai.get('cardio_protocol'):
                     st.info(f"🔥 **CARDIO:** {res_ai.get('cardio_protocol')}")
 
                 st.markdown("---")
 
-                # ---------------------------------------------------------
-                # ANTEPRIMA SCHEDA CON IMMAGINI (FIX VISUALIZZAZIONE)
-                # ---------------------------------------------------------
+                # Anteprima Esercizi con Immagini
                 for day, ex_list in res_ai.get('tabella', {}).items():
                     with st.expander(f"🔴 {day.upper()}", expanded=True):
                         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
                         st.markdown(f"**TIME CHECK:** {stima_durata_sessione(lista)} min")
-                        
                         for ex in lista:
                             if not isinstance(ex, dict): continue
-                            
-                            # Recupero Immagini per Anteprima
                             nome_ex = ex.get('Esercizio','')
                             clean_name = nome_ex.split('(')[0].strip()
                             img1, img2 = trova_img(clean_name, df_img)
                             
-                            col_img, col_txt = st.columns([1, 4])
-                            
-                            with col_img:
+                            c_img, c_txt = st.columns([1, 4])
+                            with c_img:
                                 if img1: st.image(img1, use_container_width=True)
-                            
-                            with col_txt:
+                            with c_txt:
                                 st.markdown(f"**{nome_ex}**")
                                 if "Cardio" not in nome_ex:
                                     st.caption(f"{ex.get('Sets','?')} x {ex.get('Reps','?')} | Rec: {ex.get('Recupero','?')} | TUT: {ex.get('TUT','?')}")
                                 st.markdown(f"<span style='color:#888; font-size:12px;'>💡 {ex.get('Esecuzione','')}</span>", unsafe_allow_html=True)
-                            
                             st.divider()
             else: 
                 st.error(res_ai['errore'])
