@@ -165,21 +165,26 @@ def trova_img(nome, df):
 # ==============================================================================
 # 3. AI CORE (PROMPT PETRUZZI)
 # ==============================================================================
-
 def genera_protocollo_petruzzi(dati_input, api_key):
     client = OpenAI(api_key=api_key)
-    target_ex = int(dati_input['durata_target'] / 8.5)
-    if target_ex < 6: target_ex = 6
-
+    
+    # Calcolo volume basato su durata e tipo frequenza
+    target_ex = int(dati_input['durata_target'] / 9) 
+    
     system_prompt = f"""
     SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
-    NON SEI UN ASSISTENTE. SEI UN MENTORE TECNICO, FREDDO, SCIENTIFICO.
-    RIVOLGITI COL "TU". TONO: DARK SCIENCE.
+    STILE: HARD SCIENCE, MINIMALISTA, RIGOROSO.
     
-    ORDINE DI VOLUME: {target_ex} ESERCIZI PER SEDUTA.
-    MATRICE: 3gg PPL, 4gg UL/UL. 
-    MORFOLOGIA: {dati_input['meta_bio']}
-    CARDIO: OBBLIGATORIO IN %FTP E ZONE Z2.
+    PARAMETRI BIOMETRICI: {dati_input['meta_bio']}
+    LIMITAZIONI CLINICHE: {dati_input['limitazioni']}
+    FREQUENZA RICHIESTA: {dati_input['frequenza_target']}
+    GIORNI DISPONIBILI: {dati_input['giorni_selezionati']}
+    VOLUME TARGET: {target_ex} esercizi per seduta.
+
+    REGOLE DI GENERAZIONE:
+    1. Se FREQUENZA = MULTIFREQUENZA, usa split Upper/Lower o PPL.
+    2. Se FREQUENZA = MONOFREQUENZA, usa split per gruppi muscolari singoli.
+    3. Rispetta rigorosamente le LIMITAZIONI CLINICHE (es. no carichi assiali se Ernia).
     
     OUTPUT JSON RIGIDO:
     {{
@@ -187,16 +192,21 @@ def genera_protocollo_petruzzi(dati_input, api_key):
         "analisi_clinica": "ANALISI...",
         "warning_tecnico": "ORDINE...",
         "cardio_protocol": "Z2 FTP...",
-        "tabella": {{ "LUNEDI": [ {{"Esercizio": "...", "Sets": "4", "Reps": "6", "Recupero": "120s", "TUT": "3-0-1-0", "Esecuzione": "...", "Note": "..." }} ] }}
+        "tabella": {{ "GIORNO": [ {{"Esercizio": "...", "Sets": "...", "Reps": "...", "Recupero": "...", "TUT": "...", "Esecuzione": "...", "Note": "..." }} ] }}
     }}
     """
     try:
         res = client.chat.completions.create(
-            model="gpt-4o", response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": f"Genera scheda per {dati_input['goal']}"}]
+            model="gpt-4o", 
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt}, 
+                {"role": "user", "content": f"Genera protocollo per obiettivo: {dati_input['goal']}"}
+            ]
         )
         return json.loads(res.choices[0].message.content)
-    except Exception as e: return {"errore": str(e)}
+    except Exception as e: 
+        return {"errore": str(e)}
 
 # ==============================================================================
 # 4. REPORT & INTERFACCIA
