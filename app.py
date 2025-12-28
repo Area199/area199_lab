@@ -702,7 +702,7 @@ else:
 
 # --- ATLETA VIEW ---
 # ==============================================================================
-# INTERFACCIA ATLETA (FIX PARAMETRO ETA)
+# INTERFACCIA ATLETA (CLIENT VIEW)
 # ==============================================================================
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
@@ -715,10 +715,12 @@ if not is_coach:
             if dati_row is not None:
                 st.success(f"Bentornato/a, {nome_atleta}.")
                 
-                # Rigenerazione Immagini
+                # Rigenerazione DB Immagini
                 df_img_regen = ottieni_db_immagini()
                 
-                # FIX CRITICO: AGGIUNTO 'eta=30' PER EVITARE IL CRASH
+                # Generazione HTML
+                # Passiamo parametri "dummy" ("N/D") perché l'atleta non inserisce misure al login.
+                # La funzione crea_report_totale leggerà i dati veri dal JSON salvato.
                 html_rebuilt = crea_report_totale(
                     nome=nome_atleta,
                     dati_ai=dati_row, 
@@ -729,7 +731,7 @@ if not is_coach:
                     somatotipo="N/D", 
                     whr="N/D", 
                     ffmi="N/D",
-                    eta=30 # <--- QUESTO MANCAVA E FACEVA CRASHARE TUTTO
+                    eta=30 # Fallback per FC Max
                 )
                 
                 st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
@@ -741,7 +743,7 @@ if not is_coach:
                     type="primary"
                 )
             else:
-                st.error("❌ Nessun protocollo trovato o Email errata.")
+                st.error("❌ Nessun protocollo trovato. Controlla l'email.")
     st.stop()
 
 # --- COACH VIEW ---
@@ -804,32 +806,33 @@ with st.sidebar:
 
 def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf, somatotipo, whr, ffmi, eta=30):
     """
-    Genera il report HTML.
-    NOTA: eta=30 è un default di sicurezza per evitare crash se manca il dato.
+    Genera il report HTML pulito.
     """
     logo_b64 = get_base64_logo()
     oggi = datetime.now().strftime("%d/%m/%Y")
     workout_html = ""
     alert_html = f"<div class='warning-box'>⚠️ <b>LIMITAZIONI E INFORTUNI:</b> {limitazioni}</div>" if limitazioni else ""
     
-    # 1. RECUPERO DATI BIOMETRICI (Persistence Check)
-    # Se i dati mancano, li cerchiamo nei metadati salvati nel JSON
+    # 1. GESTIONE DATI MANCANTI (FALLBACK JSON)
+    # Se il dato non viene passato (è N/D), proviamo a leggerlo dai metadati del JSON
     meta = dati_ai.get('meta_biometria', {})
+    
+    # Priorità: Argomento funzione > Metadato JSON > "N/D"
     if str(somatotipo) in ["N/D", "None", "", "0"] and 'somato' in meta: somatotipo = meta['somato']
     if str(ffmi) in ["N/D", "None", "0", ""] and 'ffmi' in meta: ffmi = meta['ffmi']
     if str(bf) in ["N/D", "None", "0", ""] and 'bf' in meta: bf = meta['bf']
     if str(whr) in ["N/D", "None", "0", ""] and 'whr' in meta: whr = meta['whr']
 
-    # Pulizia stringa somatotipo
+    # Pulizia stringhe
     somato_display = str(somatotipo).split('(')[0].strip() if somatotipo else "N/D"
     
-    # Calcolo FC Max
+    # Calcolo FC Max (Stima rapida se età manca)
     try:
         fc_max = 220 - int(eta)
     except:
-        fc_max = 190 # Fallback standard
+        fc_max = 190
 
-    # 2. BLOCCO BIOMETRICO (SOLO DATI - PULITO)
+    # 2. BLOCCO METRICHE (SOLO NUMERI - NO TESTO)
     morfo_html = f"""
     <div style='display:flex; justify-content:space-between; background:#080808; padding:15px; border:1px solid #333; margin-bottom:15px; font-family:monospace;'>
         <div style='text-align:center;'><span style='color:#666; font-size:10px;'>SOMATOTIPO</span><br><b style='color:#fff; font-size:14px;'>{somato_display}</b></div>
@@ -839,7 +842,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     </div>
     """
     
-    # 3. GENERAZIONE ESERCIZI
+    # 3. TABELLA ESERCIZI (CON FOTO)
     for day, ex_list in dati_ai.get('tabella', {}).items():
         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
         durata = stima_durata_sessione(lista)
@@ -849,12 +852,12 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
         for ex in lista:
             if not isinstance(ex, dict): continue
             nome_ex = ex.get('Esercizio','N/D')
-            img_search_name = nome_ex.split('(')[0].strip()
-            img1, img2 = trova_img(img_search_name, df_img)
+            # Pulizia nome per ricerca immagine
+            clean_name = nome_ex.split('(')[0].strip()
+            img1, img2 = trova_img(clean_name, df_img)
             
             img_html = ""
             if img1: img_html += f"<img src='{img1}' class='ex-img'>"
-            if img2: img_html += f"<img src='{img2}' class='ex-img'>"
             
             sets_reps = "CARDIO" if "Cardio" in nome_ex else f"<b style='font-size:14px; color:#fff'>{ex.get('Sets','?')}</b> x <b style='font-size:14px; color:#fff'>{ex.get('Reps','?')}</b>"
             rec_tut = "N/A" if "Cardio" in nome_ex else f"Rec: {ex.get('Recupero','?')}s<br><span style='font-size:10px; color:#888'>TUT: {ex.get('TUT','?')}</span>"
@@ -869,7 +872,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             """
         workout_html += "</table><br>"
 
-    # 4. HTML FINALE (ANALISI CLINICA INSERITA UNA VOLTA SOLA)
+    # 4. HTML FINALE BLINDATO
     html = f"""
     <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
     body {{ font-family: 'Helvetica', sans-serif; background-color: #050505; color: #d0d0d0; padding: 20px; }}
@@ -905,9 +908,9 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             <p style="color:#ff4444; font-weight:bold; margin:0;">🔥 PROTOCOLLO CARDIO:</p>
             <p style="color:#ddd; font-style:italic; margin-top:5px;">{dati_ai.get('cardio_protocol','')}</p>
             <p style="color:#666; font-size:10px; margin-top:5px;">
-                *FC MAX (Stima 220-Età): <b>{fc_max} bpm</b>.<br>
-                Z1 (Recupero): 50-60% ({int(fc_max*0.5)}-{int(fc_max*0.6)} bpm) | 
-                Z2 (Endurance): 60-70% ({int(fc_max*0.6)}-{int(fc_max*0.7)} bpm).
+                *FC MAX STIMATA: <b>{fc_max} bpm</b>.<br>
+                Z1: {int(fc_max*0.5)}-{int(fc_max*0.6)} bpm | 
+                Z2: {int(fc_max*0.6)}-{int(fc_max*0.7)} bpm.
             </p>
         </div>
     </div>
