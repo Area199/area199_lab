@@ -318,29 +318,54 @@ if pwd == "PETRUZZI199":
             st.write(res)
 # 5. VISUALIZZAZIONE RISULTATI E STORICO
 if 'ai' in st.session_state:
-    st.subheader(f"REPORT TECNICO: {st.session_state['n']}")
+    st.title(f"☢️ AREA 199 LAB: {st.session_state['n'].upper()}")
     
-    # Visualizzazione Grafico Storico nel corpo principale
-    df_storico = leggi_storico(st.session_state['n'])
-    if df_storico is not None and not df_storico.empty:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df_storico['Data'], 
-            y=df_storico['Peso'], 
-            mode='lines+markers', 
-            name='Peso (kg)',
-            line=dict(color='#ff0000', width=3)
-        ))
-        fig.update_layout(
-            title="PROGRESSIONE PESO CORPOREO",
-            template="plotly_dark",
-            height=350,
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color="#e0e0e0")
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # Layout a due colonne: Grafico a sinistra, Dati a destra
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        df_storico = leggi_storico(st.session_state['n'])
+        if df_storico is not None and not df_storico.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=df_storico['Data'], 
+                y=df_storico['Peso'], 
+                mode='lines+markers',
+                line=dict(color='#ff0000', width=3),
+                marker=dict(size=8, color='#ffffff')
+            ))
+            fig.update_layout(
+                title="ANALISI STORICA PESO",
+                template="plotly_dark",
+                height=300,
+                margin=dict(l=0,r=0,t=40,b=0),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Box dati sintetico
+        st.markdown(f"""
+        <div style="background-color: #1a1a1a; padding: 15px; border-left: 5px solid #ff0000; margin-top: 40px;">
+            <p style="margin:0; font-size:14px; color:#888;">SOMATOTIPO</p>
+            <p style="margin:0; font-size:20px; font-weight:bold; color:#ff0000;">{st.session_state['som']}</p>
+            <hr style="margin:10px 0; border:0.5px solid #333;">
+            <p style="margin:0; font-size:14px; color:#888;">BODY FAT %</p>
+            <p style="margin:0; font-size:20px; font-weight:bold; color:#fff;">{st.session_state['bf']}%</p>
+            <hr style="margin:10px 0; border:0.5px solid #333;">
+            <p style="margin:0; font-size:14px; color:#888;">FFMI</p>
+            <p style="margin:0; font-size:20px; font-weight:bold; color:#fff;">{st.session_state['ff']}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
+    st.markdown("---")
+    
+    # Rendering della tabella allenamento
+    res = st.session_state['ai']
+    for giorno, esercizi in res.get('tabella', {}).items():
+        with st.expander(f"🏋️ {giorno}", expanded=True):
+            st.table(pd.DataFrame(esercizi))
     # Visualizzazione della Scheda Generata (JSON o Tabella)
     st.markdown("### PROTOCOLO GENERATO")
     st.write(st.session_state['ai'])
