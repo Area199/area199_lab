@@ -805,44 +805,33 @@ with st.sidebar:
     btn_gen = st.button("🧠 ELABORA SCHEDA")
 
 def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf, somatotipo, whr, ffmi, eta=30):
-    """
-    Genera il report HTML pulito.
-    """
     logo_b64 = get_base64_logo()
     oggi = datetime.now().strftime("%d/%m/%Y")
     workout_html = ""
     alert_html = f"<div class='warning-box'>⚠️ <b>LIMITAZIONI E INFORTUNI:</b> {limitazioni}</div>" if limitazioni else ""
     
-    # 1. GESTIONE DATI MANCANTI (FALLBACK JSON)
-    # Se il dato non viene passato (è N/D), proviamo a leggerlo dai metadati del JSON
+    # 1. RECUPERO DATI PERSI (Logica Anti-N/D)
     meta = dati_ai.get('meta_biometria', {})
-    
-    # Priorità: Argomento funzione > Metadato JSON > "N/D"
-    if str(somatotipo) in ["N/D", "None", "", "0"] and 'somato' in meta: somatotipo = meta['somato']
+    if str(somatotipo) in ["N/D", "None", ""] and 'somato' in meta: somatotipo = meta['somato']
     if str(ffmi) in ["N/D", "None", "0", ""] and 'ffmi' in meta: ffmi = meta['ffmi']
     if str(bf) in ["N/D", "None", "0", ""] and 'bf' in meta: bf = meta['bf']
     if str(whr) in ["N/D", "None", "0", ""] and 'whr' in meta: whr = meta['whr']
 
-    # Pulizia stringhe
-    somato_display = str(somatotipo).split('(')[0].strip() if somatotipo else "N/D"
-    
-    # Calcolo FC Max (Stima rapida se età manca)
-    try:
-        fc_max = 220 - int(eta)
-    except:
-        fc_max = 190
+    # Pulizia Stringhe
+    somato_clean = str(somatotipo).split('(')[0].strip() if somatotipo else "N/D"
+    fc_max = 220 - int(eta)
 
-    # 2. BLOCCO METRICHE (SOLO NUMERI - NO TESTO)
+    # 2. BLOCCO BIOMETRICO (SOLO DATI - NIENTE TESTO QUI)
     morfo_html = f"""
     <div style='display:flex; justify-content:space-between; background:#080808; padding:15px; border:1px solid #333; margin-bottom:15px; font-family:monospace;'>
-        <div style='text-align:center;'><span style='color:#666; font-size:10px;'>SOMATOTIPO</span><br><b style='color:#fff; font-size:14px;'>{somato_display}</b></div>
+        <div style='text-align:center;'><span style='color:#666; font-size:10px;'>SOMATOTIPO</span><br><b style='color:#fff; font-size:14px;'>{somato_clean}</b></div>
         <div style='text-align:center;'><span style='color:#666; font-size:10px;'>FFMI</span><br><b style='color:#ff0000; font-size:16px;'>{ffmi}</b></div>
         <div style='text-align:center;'><span style='color:#666; font-size:10px;'>BF%</span><br><b style='color:#fff; font-size:14px;'>{bf}%</b></div>
         <div style='text-align:center;'><span style='color:#666; font-size:10px;'>WHR</span><br><b style='color:#fff; font-size:14px;'>{whr}</b></div>
     </div>
     """
     
-    # 3. TABELLA ESERCIZI (CON FOTO)
+    # 3. TABELLA ESERCIZI
     for day, ex_list in dati_ai.get('tabella', {}).items():
         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
         durata = stima_durata_sessione(lista)
@@ -852,9 +841,8 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
         for ex in lista:
             if not isinstance(ex, dict): continue
             nome_ex = ex.get('Esercizio','N/D')
-            # Pulizia nome per ricerca immagine
-            clean_name = nome_ex.split('(')[0].strip()
-            img1, img2 = trova_img(clean_name, df_img)
+            img_search_name = nome_ex.split('(')[0].strip()
+            img1, img2 = trova_img(img_search_name, df_img)
             
             img_html = ""
             if img1: img_html += f"<img src='{img1}' class='ex-img'>"
@@ -872,7 +860,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             """
         workout_html += "</table><br>"
 
-    # 4. HTML FINALE BLINDATO
+    # 4. HTML FINALE (Commenti e Analisi inseriti UNA SOLA VOLTA)
     html = f"""
     <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
     body {{ font-family: 'Helvetica', sans-serif; background-color: #050505; color: #d0d0d0; padding: 20px; }}
@@ -908,9 +896,9 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             <p style="color:#ff4444; font-weight:bold; margin:0;">🔥 PROTOCOLLO CARDIO:</p>
             <p style="color:#ddd; font-style:italic; margin-top:5px;">{dati_ai.get('cardio_protocol','')}</p>
             <p style="color:#666; font-size:10px; margin-top:5px;">
-                *FC MAX STIMATA: <b>{fc_max} bpm</b>.<br>
-                Z1: {int(fc_max*0.5)}-{int(fc_max*0.6)} bpm | 
-                Z2: {int(fc_max*0.6)}-{int(fc_max*0.7)} bpm.
+                *FC MAX (Stima 220-Età): <b>{fc_max} bpm</b>.<br>
+                Z1 (Recupero): 50-60% ({int(fc_max*0.5)}-{int(fc_max*0.6)} bpm) | 
+                Z2 (Endurance): 60-70% ({int(fc_max*0.6)}-{int(fc_max*0.7)} bpm).
             </p>
         </div>
     </div>
@@ -928,6 +916,50 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     """
     return html
 
+# ==============================================================================
+# 7. EXPORT & SYNC (CORRETTO E ALLINEATO A SINISTRA)
+# ==============================================================================
+
+# --- QUESTA PARTE DEVE STARE FUORI DA "crea_report_totale" ---
+
+# --- LOGICA DI VISUALIZZAZIONE BOTTONE SALVATAGGIO ---
+if 'last_ai' in st.session_state:
+    st.markdown("---")
+    st.header("📄 EXPORT & SYNC")
+    
+    # Ricreazione Grafici
+    grafici_html = []
+    df_hist = leggi_storico(st.session_state.get('last_nome', ''))
+    if df_hist is not None and len(df_hist) > 1:
+        try:
+            g_peso = grafico_trend(df_hist, "Peso", colore="#ff0000")
+            if g_peso: grafici_html.append(pio.to_html(g_peso, full_html=False, include_plotlyjs='cdn'))
+            g_vita = grafico_trend(df_hist, "Vita", colore="#ffff00")
+            if g_vita: grafici_html.append(pio.to_html(g_vita, full_html=False, include_plotlyjs='cdn'))
+            g_br = grafico_simmetria(df_hist, "Braccio")
+            if g_br: grafici_html.append(pio.to_html(g_br, full_html=False, include_plotlyjs='cdn'))
+            g_lg = grafico_simmetria(df_hist, "Coscia")
+            if g_lg: grafici_html.append(pio.to_html(g_lg, full_html=False, include_plotlyjs='cdn'))
+        except: pass
+
+    # Recupero ETA dalla sessione o input corrente (di default 30 se manca)
+    eta_val = eta if 'eta' in locals() else 30
+
+    # Generazione Report Finale per il salvataggio
+    html_report = crea_report_totale(
+        nome=st.session_state['last_nome'],
+        dati_ai=st.session_state['last_ai'],
+        grafici_html_list=grafici_html,
+        df_img=df_img,
+        limitazioni=st.session_state.get('last_limitazioni', ''),
+        bf=st.session_state.get('last_bf', "N/D"),
+        somatotipo=st.session_state.get('last_somato', "N/D"),
+        whr=st.session_state.get('last_whr', "N/D"),
+        ffmi=st.session_state.get('last_ffmi', "N/D"),
+        eta=eta_val 
+    )
+    
+    # Callback Salvataggio
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
         if not mail_sicura:
@@ -948,6 +980,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             else:
                 st.error("⚠️ Errore Scrittura Database.")
 
+    # Bottone Finale
     st.download_button(
         label="📥 SCARICA COPIA E ATTIVA SU DATABASE", 
         data=html_report, 
