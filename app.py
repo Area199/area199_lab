@@ -64,12 +64,79 @@ st.markdown("""
 # FUNZIONI CORE (DATABASE & LOGICA)
 # ==============================================================================
 
-def leggi_storico(nome):
-    """Legge il file CSV dell'atleta specifico."""
-    clean = "".join(x for x in nome if x.isalnum() or x in " _-").strip()
-    p = os.path.join("database_clienti", clean, "storico_misure.csv")
-    return pd.read_csv(p) if os.path.exists(p) else None
+# ==============================================================================
+# FUNZIONI CORE (DATABASE CLOUD & LOGICA)
+# ==============================================================================
 
+def get_gsheet_client():
+    """Funzione helper per autenticazione Google (Centralizzata)."""
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    return gspread.authorize(creds)
+
+def leggi_storico(nome):
+    """
+    [AGGIORNATA] Legge lo storico dal foglio Google 'Storico_Misure' invece che dal CSV locale.
+    Accessibile da qualsiasi PC.
+    """
+    try:
+        client = get_gsheet_client()
+        # Apre il tab specifico creato nel Passo 1
+        sheet = client.open("AREA199_DB").worksheet("Storico_Misure")
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        
+        # Filtra per nome (Clean & Case Insensitive)
+        if not df.empty and 'Nome' in df.columns:
+            target = nome.strip().lower()
+            # Converte la colonna nome in stringa per sicurezza
+            df_filtered = df[df['Nome'].astype(str).str.strip().str.lower() == target]
+            
+            # Ordina per data se presente
+            if not df_filtered.empty:
+                df_filtered['Data'] = pd.to_datetime(df_filtered['Data'], errors='coerce')
+                df_filtered = df_filtered.sort_values(by="Data", ascending=True)
+                return df_filtered
+        return None
+    except Exception as e:
+        # Se il foglio non esiste ancora o errore di rete
+        # print(f"DEBUG: Errore lettura storico: {e}") 
+        return None
+
+def salva_dati_check(nome, dati):
+    """
+    [AGGIORNATA] Salva i dati direttamente su Google Sheets.
+    Niente più file persi cambiando PC.
+    """
+    try:
+        client = get_gsheet_client()
+        sheet = client.open("AREA199_DB").worksheet("Storico_Misure")
+        
+        # Creiamo la riga nell'ordine esatto delle colonne create nel Passo 1
+        nuova_riga = [
+            dati.get("Data", datetime.now().strftime("%Y-%m-%d")),
+            nome,
+            dati.get("Peso", 0),
+            dati.get("Collo", 0),
+            dati.get("Vita", 0),
+            dati.get("Fianchi", 0),
+            dati.get("Polso", 0),
+            dati.get("Caviglia", 0),
+            dati.get("Torace", 0),
+            dati.get("Braccio Dx", 0),
+            dati.get("Braccio Sx", 0),
+            dati.get("Coscia Dx", 0),
+            dati.get("Coscia Sx", 0)
+        ]
+        
+        sheet.append_row(nuova_riga)
+        return True
+    except Exception as e:
+        st.error(f"⚠️ ERRORE SALVATAGGIO CLOUD: {e}")
+        st.warning("Verifica di aver creato il foglio 'Storico_Misure' su Google Sheets.")
+        return False
+
+@st.cache_data
 def ottieni_db_immagini():
     try:
         url = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
@@ -89,40 +156,48 @@ def ottieni_db_immagini():
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     """
-    Salva il DNA della scheda (JSON) direttamente nel Database.
-    BYPASS DRIVE: Il 'link_drive' è fittizio, i dati sono nel 'dna_scheda'.
+    Salva il protocollo (JSON) nel Database principale (Foglio1).
     """
-    # SERIALIZZAZIONE JSON (Il "DNA" della scheda)
     dna_scheda = json.dumps(dati_ai) 
-
-    # STRUTTURA RIGA (Verifica che l'ordine corrisponda alle colonne del tuo Sheet)
     nuova_riga = [
-        datetime.now().strftime("%Y-%m-%d"), # Data
-        email,                               # Email
-        nome,                                # Nome
-        dati_ai.get('mesociclo', 'N/D'),     # Fase
-        dati_ai.get('cardio_protocol', ''),  # Cardio
-        note_coach,                          # Note Coach
-        dati_ai.get('analisi_clinica', ''),  # Analisi
-        dna_scheda                           # <--- IL PAYLOAD DATI (Cruciale)
+        datetime.now().strftime("%Y-%m-%d"), 
+        email, nome, 
+        dati_ai.get('mesociclo', 'N/D'), 
+        dati_ai.get('cardio_protocol', ''), 
+        note_coach, 
+        dati_ai.get('analisi_clinica', ''), 
+        dna_scheda 
     ]
-    
     try:
-        # Usa SOLO lo scope spreadsheets se drive da problemi
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        s_info = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(s_info, scopes=scopes)
-        client = gspread.authorize(creds)
-        
+        client = get_gsheet_client() # Usa la nuova funzione helper
         sheet = client.open("AREA199_DB").sheet1 
         sheet.append_row(nuova_riga) 
         return True
     except Exception as e:
         st.error(f"ERRORE CRITICO DB: {e}")
         return False
+
+def recupera_protocollo_da_db(email_target):
+    if not email_target: return None, None
+    try:
+        client = get_gsheet_client() # Usa la nuova funzione helper
+        sheet = client.open("AREA199_DB").sheet1
+        records = sheet.get_all_records()
+        df = pd.DataFrame(records)
+        col_email = 'Email_Cliente' if 'Email_Cliente' in df.columns else 'Email'
+        
+        user_data = df[df[col_email].astype(str).str.strip().str.lower() == email_target.strip().lower()]
+        
+        if not user_data.empty:
+            last_record = user_data.iloc[-1]
+            raw_json = last_record['Link_Scheda'] 
+            if isinstance(raw_json, str) and raw_json.startswith('{'):
+                return json.loads(raw_json), last_record['Nome']
+        return None, None
+    except Exception as e: return None, None
+
+def upload_to_drive(file_content, file_name, folder_id="NON_USATO"):
+    return "DRIVE_DISABILITATO"
 
 def recupera_protocollo_da_db(email_target):
     """Legge la colonna Link_Scheda (H) come sorgente dati JSON."""
@@ -809,14 +884,16 @@ with st.sidebar:
     
     misure = { "Altezza": alt, "Peso": peso, "Collo": collo, "Vita": addome, "Addome": addome, "Fianchi": fianchi, "Polso": polso, "Caviglia": caviglia, "Torace": torace, "Braccio Dx": braccio_dx, "Braccio Sx": braccio_sx, "Coscia Dx": coscia_dx, "Coscia Sx": coscia_sx }
     
-    if st.button("💾 ARCHIVIA CHECK"):
+    if st.button("💾 ARCHIVIA CHECK (CLOUD)"):
         if nome:
-            salva_dati_check(nome, misure)
-            st.toast("Dati Archiviati.")
-        else: st.error("Inserire Nome")
-    
-    st.markdown("---")
-    btn_gen = st.button("🧠 ELABORA SCHEDA")
+            with st.spinner("Sincronizzazione Google Sheets in corso..."):
+                ok = salva_dati_check(nome, misure)
+                if ok:
+                    st.toast("✅ Dati salvati su Google Sheets!", icon="☁️")
+                    st.success("Storico aggiornato nel Database Cloud.")
+                else:
+                    st.error("Errore salvataggio. Controlla la connessione.")
+        else: st.error("Inserire Nome per archiviare.")
 
 def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf, somatotipo, whr, ffmi, eta=30):
     logo_b64 = get_base64_logo()
