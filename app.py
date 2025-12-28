@@ -919,6 +919,10 @@ if btn_gen:
                             st.divider()
             else: st.error(res_ai['errore'])
 
+# ==============================================================================
+# 6. EXPORT & SYNC (REVISIONE TECNICA)
+# ==============================================================================
+
 if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT & SYNC")
@@ -931,48 +935,49 @@ if 'last_ai' in st.session_state:
         try:
             g_br = grafico_simmetria(df_hist, "Braccio")
             if g_br: grafici_html.append(pio.to_html(g_br, full_html=False, include_plotlyjs='cdn'))
+            
             g_lg = grafico_simmetria(df_hist, "Coscia")
             if g_lg: grafici_html.append(pio.to_html(g_lg, full_html=False, include_plotlyjs='cdn'))
+            
             g_peso = grafico_trend(df_hist, "Peso", colore="#ff0000") 
             if g_peso: grafici_html.append(pio.to_html(g_peso, full_html=False, include_plotlyjs='cdn'))
+            
             g_vita = grafico_trend(df_hist, "Vita", colore="#ffff00") 
             if g_vita: grafici_html.append(pio.to_html(g_vita, full_html=False, include_plotlyjs='cdn'))
-        except: pass
+        except Exception as e:
+            st.warning(f"Errore rendering grafici: {e}")
 
-    # 2. GENERAZIONE REPORT HTML
-   html_report = crea_report_totale(
-    nome=st.session_state['last_nome'],
-    dati_ai=st.session_state['last_ai'],
-    grafici_html_list=grafici_html,
-    df_img=df_img,
-    limitazioni=st.session_state.get('last_limitazioni', ''),
-    bf=st.session_state.get('last_bf', 0),
-    somatotipo=st.session_state.get('last_somato', 'N/D'),
-    whr=st.session_state.get('last_whr', 0),
-    ffmi=st.session_state.get('last_ffmi', 0)
-)
-
+    # 2. GENERAZIONE REPORT HTML (Chiamata corretta)
+    html_report = crea_report_totale(
+        nome=st.session_state['last_nome'],
+        dati_ai=st.session_state['last_ai'],
+        grafici_html_list=grafici_html,
+        df_img=df_img,
+        limitazioni=st.session_state.get('last_limitazioni', ''),
+        bf=st.session_state.get('last_bf', 0),
+        somatotipo=st.session_state.get('last_somato', 'N/D'),
+        whr=st.session_state.get('last_whr', 0),
+        ffmi=st.session_state.get('last_ffmi', 0)
     )
-    
-    # 3. FUNZIONE CALLBACK CORRETTA (SEQUENZIALE)
+
+    # 3. LOGICA DI CALLBACK PER L'INVIO CLOUD
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
         nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
-            # --- FASE 1: UPLOAD SU GOOGLE DRIVE ---
+            # FASE 1: UPLOAD SU GOOGLE DRIVE
             st.toast("📤 Caricamento Report su Google Drive...", icon="☁️")
-            # Chiamata esplicita alla funzione di upload
             link_generato = upload_to_drive(html_report, f"AREA199_{nome_atleta}.html")
             
             if link_generato:
-                # --- FASE 2: INVIO A GOOGLE SHEETS ---
+                # FASE 2: INVIO A GOOGLE SHEETS
                 ok = aggiorna_db_glide(
                     nome_atleta, 
                     mail_sicura, 
                     res, 
-                    link_drive=link_generato, # <--- ORA IL LINK VIENE PASSATO CORRETTAMENTE
+                    link_drive=link_generato, 
                     note_coach=res.get('warning_tecnico','')
                 )
                 if ok:
@@ -982,9 +987,9 @@ if 'last_ai' in st.session_state:
             else:
                 st.error("⚠️ Fallimento Upload Drive. Verifica permessi della cartella.")
         else:
-            st.toast("⚠️ Email non trovata! Inseriscila PRIMA di cliccare Elabora.", icon="📧")
+            st.toast("⚠️ Email o dati mancanti!", icon="📧")
 
-    # 4. IL BOTTONE UNICO
+    # 4. DOWNLOAD BUTTON
     st.download_button(
         label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
         data=html_report, 
