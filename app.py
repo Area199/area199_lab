@@ -181,6 +181,9 @@ if not access_granted:
 # ==============================================================================
 # INTERFACCIA ATLETA (RIGENERAZIONE LIVE)
 # ==============================================================================
+# ==============================================================================
+# INTERFACCIA ATLETA (RIGENERAZIONE LIVE)
+# ==============================================================================
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
     st.markdown("Inserisci la mail registrata per scaricare il protocollo.")
