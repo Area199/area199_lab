@@ -845,6 +845,9 @@ if not api_key_input: api_key_input = st.sidebar.text_input("Inserisci OpenAI AP
 
 df_img = ottieni_db_immagini()
 
+# --- COACH VIEW (SIDEBAR CORRETTA) ---
+# Se non vedi il pulsante, è colpa dell'indentazione. Questo codice la fissa.
+
 with st.sidebar:
     st.header("🗂 PROFILO")
     nome = st.text_input("Nome Cliente")
@@ -884,16 +887,22 @@ with st.sidebar:
     
     misure = { "Altezza": alt, "Peso": peso, "Collo": collo, "Vita": addome, "Addome": addome, "Fianchi": fianchi, "Polso": polso, "Caviglia": caviglia, "Torace": torace, "Braccio Dx": braccio_dx, "Braccio Sx": braccio_sx, "Coscia Dx": coscia_dx, "Coscia Sx": coscia_sx }
     
+    # PULSANTE SALVATAGGIO STORICO
     if st.button("💾 ARCHIVIA CHECK (CLOUD)"):
         if nome:
-            with st.spinner("Sincronizzazione Google Sheets in corso..."):
+            with st.spinner("Connessione al Database..."):
                 ok = salva_dati_check(nome, misure)
                 if ok:
                     st.toast("✅ Dati salvati su Google Sheets!", icon="☁️")
-                    st.success("Storico aggiornato nel Database Cloud.")
+                    st.success("Storico aggiornato nel Cloud.")
                 else:
-                    st.error("Errore salvataggio. Controlla la connessione.")
+                    st.error("ERRORE SALVATAGGIO.")
+                    st.info("Hai creato il foglio 'Storico_Misure' su Google Sheets?")
         else: st.error("Inserire Nome per archiviare.")
+    
+    st.markdown("---")
+    # PULSANTE GENERAZIONE (FUORI DA OGNI IF)
+    btn_gen = st.button("🧠 ELABORA SCHEDA")
 
 def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf, somatotipo, whr, ffmi, eta=30):
     logo_b64 = get_base64_logo()
