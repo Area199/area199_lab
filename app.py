@@ -707,54 +707,57 @@ else:
 # ==============================================================================
 # INTERFACCIA ATLETA (FIX VISUALIZZAZIONE)
 # ==============================================================================
+# ==============================================================================
+# INTERFACCIA ATLETA (VERSIONE DEBUGGING)
+# ==============================================================================
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
     email_login = st.text_input("Email Atleta").strip()
     
     if email_login:
-        # Recupero Dati
-        dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
-        
-        if dati_row is not None:
-            # Se arriviamo qui, i dati ci sono (formato JSON corretto)
-            st.success(f"Bentornato/a, {nome_atleta}.")
+        with st.spinner("Ricerca Protocollo in corso..."):
+            dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
             
-            try:
-                # Rigenerazione DB Immagini (Gestione errore se fallisce scaricamento)
-                df_img_regen = ottieni_db_immagini()
+            if dati_row is not None:
+                st.success(f"Bentornato/a, {nome_atleta}. Protocollo Trovato.")
                 
-                # Generazione HTML
-                html_rebuilt = crea_report_totale(
-                    nome=nome_atleta,
-                    dati_ai=dati_row, 
-                    grafici_html_list=[], 
-                    df_img=df_img_regen,
-                    limitazioni="Vedi Note Coach", 
-                    bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D",
-                    eta=30 # Default sicurezza
-                )
-                
-                st.markdown("---")
-                st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
-                
-                # PULSANTE DI DOWNLOAD (Chiave unica per evitare conflitti)
-                st.download_button(
-                    label="📄 SCARICA SCHEDA COMPLETA (HTML)",
-                    data=html_rebuilt,
-                    file_name=f"AREA199_{nome_atleta}_{datetime.now().strftime('%d%m')}.html",
-                    mime="text/html",
-                    key="download_btn_atleta",
-                    type="primary"
-                )
-            
-            except Exception as e:
-                st.error(f"Errore durante la generazione del file: {e}")
-        
-        else:
-            # MESSAGGIO ERRORE SPECIFICO
-            st.warning("⚠️ Nessun protocollo attivo trovato per questa email.")
-            st.info("Possibili cause:\n1. Email errata.\n2. Il Coach non ha ancora salvato la scheda nel nuovo formato.\n3. Il salvataggio precedente non è andato a buon fine.")
-
+                # --- BLOCCO A RISCHIO: GENERAZIONE HTML ---
+                try:
+                    # 1. Scaricamento Immagini
+                    df_img_regen = ottieni_db_immagini()
+                    
+                    # 2. Generazione HTML (Qui avveniva il crash silenzioso)
+                    html_rebuilt = crea_report_totale(
+                        nome=nome_atleta,
+                        dati_ai=dati_row, 
+                        grafici_html_list=[], 
+                        df_img=df_img_regen,
+                        limitazioni="Vedi Note Coach", 
+                        bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D",
+                        eta=30 # Parametro di sicurezza per evitare crash FC
+                    )
+                    
+                    st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
+                    
+                    # 3. Pulsante (Ora dovrebbe apparire)
+                    st.download_button(
+                        label="📄 SCARICA SCHEDA COMPLETA (HTML)",
+                        data=html_rebuilt,
+                        file_name=f"AREA199_{nome_atleta}.html",
+                        mime="text/html",
+                        key="dl_btn_client",
+                        type="primary"
+                    )
+                    
+                except Exception as e:
+                    # SE QUALCOSA SI ROMPE, ORA LO VEDI SCRITTO
+                    st.error(f"⚠️ ERRORE GENERAZIONE FILE: {e}")
+                    st.warning("Invia uno screenshot di questo errore al Coach.")
+                    with st.expander("Dettagli Tecnici (Per il Coach)"):
+                        st.write(dati_row) # Mostra i dati grezzi per capire cosa manca
+            else:
+                st.error("❌ Nessun protocollo trovato per questa email.")
+                st.info("Verifica che il Coach abbia salvato la scheda con il nuovo sistema (Database).")
     st.stop()
 
 # --- COACH VIEW ---
