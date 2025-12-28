@@ -669,13 +669,15 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     
     # Blocco Biometrico
     morfo_html = f"""
-    <div style='display:flex; justify-content:space-between; background:#080808; padding:15px; border:1px solid #333; margin-bottom:15px; font-family:monospace;'>
-        <div><span style='color:#666; font-size:10px;'>SOMATOTIPO</span><br><b style='color:#fff;'>{somatotipo.split('|')[0]}</b></div>
-        <div><span style='color:#666; font-size:10px;'>FFMI</span><br><b style='color:#ff0000; font-size:16px;'>{ffmi}</b></div>
-        <div><span style='color:#666; font-size:10px;'>BF% (NAVY)</span><br><b style='color:#fff;'>{bf}%</b></div>
-        <div><span style='color:#666; font-size:10px;'>WHR</span><br><b style='color:{"#ff0000" if whr > 0.9 else "#00ff00"};'>{whr}</b></div>
-    </div>
-    """
+<div style='display:flex; justify-content:space-between; background:#080808; padding:15px; border:1px solid #333; margin-bottom:15px; font-family:monospace;'>
+    <div><span style='color:#666; font-size:10px;'>SOMATOTIPO</span><br><b style='color:#fff;'>{somatotipo.split('|')[0]}</b></div>
+    <div><span style='color:#666; font-size:10px;'>FFMI</span><br><b style='#ff0000; font-size:16px;'>{ffmi}</b></div>
+    <div><span style='color:#666; font-size:10px;'>BF%</span><br><b style='color:#fff;'>{bf}%</b></div>
+    <div><span style='color:#666; font-size:10px;'>WHR</span><br><b style='color:#fff;'>{whr}</b></div>
+</div>
+<div class='analysis-text'>{dati_ai.get('analisi_clinica','')}</div>
+"""
+
     
     # Generazione Tabella Allenamento
     for day, ex_list in dati_ai.get('tabella', {}).items():
