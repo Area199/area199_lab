@@ -316,13 +316,34 @@ if pwd == "PETRUZZI199":
             st.session_state['ai'] = res; st.session_state['n'] = n; st.session_state['e'] = e
             st.session_state['bf'] = bf; st.session_state['som'] = som; st.session_state['ff'] = ff; st.session_state['eta'] = eta
             st.write(res)
+# 5. VISUALIZZAZIONE RISULTATI E STORICO
+if 'ai' in st.session_state:
+    st.subheader(f"REPORT TECNICO: {st.session_state['n']}")
+    
+    # Visualizzazione Grafico Storico nel corpo principale
+    df_storico = leggi_storico(st.session_state['n'])
+    if df_storico is not None and not df_storico.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df_storico['Data'], 
+            y=df_storico['Peso'], 
+            mode='lines+markers', 
+            name='Peso (kg)',
+            line=dict(color='#ff0000', width=3)
+        ))
+        fig.update_layout(
+            title="PROGRESSIONE PESO CORPOREO",
+            template="plotly_dark",
+            height=350,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color="#e0e0e0")
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-    if 'ai' in st.session_state:
-        rep = crea_report_totale(st.session_state['n'], st.session_state['ai'], df_i, st.session_state['bf'], st.session_state['som'], st.session_state['ff'], st.session_state['eta'])
-        if st.download_button("📥 SALVA E INVIA A GLIDE", rep, f"{st.session_state['n']}.html", "text/html"):
-            if aggiorna_db_glide(st.session_state['n'], st.session_state['e'], st.session_state['ai'], st.session_state['ai'].get('warning_tecnico','')):
-                st.success("Glide Sync Complete.")
-
+    # Visualizzazione della Scheda Generata (JSON o Tabella)
+    st.markdown("### PROTOCOLO GENERATO")
+    st.write(st.session_state['ai'])
 elif pwd == "AREA199":
     # --- ATLETA PANEL ---
     st.title("Atleta Portal")
