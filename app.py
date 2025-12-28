@@ -327,16 +327,18 @@ def recupera_protocollo_da_db(email_target):
         st.error(f"Errore lettura Cloud: {e}")
         return None, None
 
-def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rvMxyUYX1qa"):
+def upload_to_drive(file_content, file_name, folder_id="UNUSED"):
     """
-    Carica su Drive convertendo in GOOGLE DOC per aggirare il blocco Quota 0.
-    I file nativi Google Docs non consumano spazio di archiviazione del Service Account.
+    [OPTIMIZED BY PETRUZZI LOGIC]
+    Funzione NEUTRALIZZATA.
+    
+    Motivo: Il Service Account ha Quota Storage = 0.
+    Azione: Bypass completo dell'API Drive.
+    Output: Restituisce un placeholder logico. Il salvataggio reale avviene via JSON su DB.
     """
-    try:
-        s_info = st.secrets["gcp_service_account"]
-        scopes = ["https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(s_info, scopes=scopes)
-        service = build('drive', 'v3', credentials=creds)
+    # Nessuna logica try/except necessaria perché non eseguiamo codice a rischio.
+    # Ritorniamo una stringa fittizia per mantenere la coerenza dei tipi di dato.
+    return "DRIVE_BYPASS_ACTIVE_NO_LINK"
         
         # 1. Preparazione File Temporaneo
         temp_path = f"temp_{file_name}"
