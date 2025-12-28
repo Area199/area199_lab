@@ -464,6 +464,13 @@ def genera_protocollo_petruzzi(dati_input, api_key):
 # 5. PROMPT UNIFICATO (CORRETTO CON TUTTE LE ISTRUZIONI COACH)
     system_prompt = f"""
     SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
+    NON SEI UN ASSISTENTE, SEI UN MENTORE TECNICO E SEVERO.
+    
+    *** REGOLE DI COMUNICAZIONE (FONDAMENTALI) ***
+    1. RIVOLGITI ALL'ATLETA DIRETTAMENTE COL "TU". (Es: "Devi spingere", "Il tuo focus").
+    2. VIETATO PARLARE IN TERZA PERSONA (Mai dire "L'atleta deve...").
+    3. TONO: DARK SCIENCE, FREDDO, CHIRURGICO. Niente fronzoli, niente complimenti inutili.
+    4. VOCABOLARIO: Usa termini come "Protocollo", "Esecuzione Letale", "Bio-feedback", "Cedimento Tecnico", "Attivazione Neurale".
     
     *** OBIETTIVO ***
     Creare una scheda massacrante e precisa.
@@ -789,15 +796,40 @@ if btn_gen:
                 
                 if limitazioni: st.markdown(f"<div class='warning-box'>⚠️ <b>INFORTUNI RILEVATI:</b> {limitazioni}</div>", unsafe_allow_html=True)
 
+                # BLOCCO VISUALIZZAZIONE SCHEDA COACH (CON IMMAGINI)
                 for day, ex_list in res_ai.get('tabella', {}).items():
                     with st.expander(f"🔴 {day.upper()}", expanded=True):
                         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
                         st.markdown(f"**TIME CHECK:** {stima_durata_sessione(lista)} min")
+                        
                         for ex in lista:
                             if not isinstance(ex, dict): continue
-                            st.markdown(f"**{ex.get('Esercizio','')}** - {ex.get('Sets','?')}x{ex.get('Reps','?')}")
+                            
+                            # LOGICA RECUPERO IMMAGINI
+                            nome_ex = ex.get('Esercizio','')
+                            img_search = nome_ex.split('(')[0].strip()
+                            img1, img2 = trova_img(img_search, df_img)
+                            
+                            # LAYOUT GRAFICO
+                            c_img, c_txt = st.columns([1, 4])
+                            with c_img:
+                                if img1: st.image(img1, use_container_width=True)
+                                if img2: st.image(img2, use_container_width=True)
+                            
+                            with c_txt:
+                                st.markdown(f"### {nome_ex}")
+                                st.caption(f"TARGET: {ex.get('Target','GLOBAL')}")
+                                if "Cardio" not in nome_ex:
+                                    col_a, col_b, col_c = st.columns(3)
+                                    col_a.markdown(f"**SETS:** {ex.get('Sets','?')}")
+                                    col_b.markdown(f"**REPS:** {ex.get('Reps','?')}")
+                                    col_c.markdown(f"**REC:** {ex.get('Recupero','?')}")
+                                    st.markdown(f"⏱️ **TUT:** `{ex.get('TUT','?')}`")
+                                
+                                st.info(f"💀 **EXECUTION:** {ex.get('Esecuzione','')}")
+                                st.warning(f"⚠️ **FOCUS:** {ex.get('Note','')}")
+                            
                             st.divider()
-            else: st.error(res_ai['errore'])
 
 # --- EXPORT & SYNC SECTION ---
 if 'last_ai' in st.session_state:
