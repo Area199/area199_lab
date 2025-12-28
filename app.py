@@ -26,6 +26,42 @@ def leggi_storico(nome):
     p = os.path.join("database_clienti", clean, "storico_misure.csv")
     return pd.read_csv(p) if os.path.exists(p) else None
 
+def recupera_protocollo_da_db(email_target):
+    """
+    Scansiona il Google Sheet AREA199_DB per trovare l'ultima scheda
+    associata all'email dell'atleta.
+    """
+    if not email_target: return None, None
+    
+    try:
+        # 1. Autenticazione Silenziosa
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        client = gspread.authorize(creds)
+        
+        # 2. Lettura Database
+        sheet = client.open("AREA199_DB").sheet1
+        data = sheet.get_all_records() # Restituisce una lista di dizionari
+        df = pd.DataFrame(data)
+        
+        # 3. Filtraggio (Case Insensitive)
+        # Assumiamo che la colonna B si chiami 'Email_Cliente' o simile
+        # Se nel foglio si chiama 'Email', cambia 'Email_Cliente' in 'Email' qui sotto
+        col_email = 'Email_Cliente' if 'Email_Cliente' in df.columns else 'Email'
+        
+        match = df[df[col_email].astype(str).str.strip().str.lower() == email_target.strip().lower()]
+        
+        if not match.empty:
+            # Restituisce l'ultima riga (la più recente)
+            ultima_scheda = match.iloc[-1]
+            return ultima_scheda, ultima_scheda['Nome']
+            
+        return None, None
+
+    except Exception as e:
+        st.error(f"ERRORE CONNESSIONE DB: {e}")
+        return None, None
+
 def grafico_trend(df, col_name, colore="#ff0000"):
     """Genera grafico linea singola."""
     if col_name not in df.columns: return None
@@ -138,34 +174,49 @@ if not access_granted:
 # SEZIONE ATLETA (Login via Email)
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
-    email_login = st.text_input("Inserisci la tua Email per accedere").strip()
+    st.markdown("Inserisci la mail registrata per scaricare il protocollo attivo.")
     
-    if st.button("🔄 CARICA IL MIO PROTOCOLLO"):
-        if email_login:
+    email_login = st.text_input("Email Atleta").strip()
+    
+    if email_login:
+        with st.spinner("Sincronizzazione Cloud in corso..."):
+            # ORA QUESTA FUNZIONE ESISTE E NON DARÀ PIÙ NAME ERROR
             dati_scheda, nome_atleta = recupera_protocollo_da_db(email_login)
             
-            if dati_scheda:
-                st.success(f"Bentornato, {nome_atleta}. Protocollo rigenerato dal Cloud.")
+            if dati_scheda is not None:
+                st.success(f"Bentornato/a, {nome_atleta}. Protocollo Trovato.")
                 
-                # Rigenera HTML al volo
-                html_live = crea_report_totale(
-                    nome=nome_atleta,
-                    dati_ai=dati_scheda,
-                    grafici_html_list=[], # I grafici richiederebbero lo storico locale, opzionale
-                    df_img=ottieni_db_immagini(),
-                    limitazioni="Vedi Note Tecniche",
-                    bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D"
-                )
+                # Estrazione Link Drive
+                link = dati_scheda.get('Link_Scheda', '') # Cerca la colonna 'Link_Scheda'
                 
-                st.download_button(
-                    label="📥 DOWNLOAD SCHEDA UFFICIALE",
-                    data=html_live,
-                    file_name=f"AREA199_{nome_atleta}.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
+                # Check se il link è valido (inizia con http)
+                if link and str(link).startswith('http'):
+                    st.markdown(f"""
+                        <br>
+                        <div style="background:#111; border:2px solid #ff0000; padding:30px; border-radius:15px; text-align:center;">
+                            <h2 style="color:#fff; margin:0 0 20px 0;">PROTOCOLLO ATTIVO</h2>
+                            <a href="{link}" target="_blank" style="text-decoration:none;">
+                                <button style="
+                                    background-color: #ff0000; 
+                                    color: white; 
+                                    border: none; 
+                                    padding: 15px 30px; 
+                                    font-size: 20px; 
+                                    font-weight: bold; 
+                                    border-radius: 8px; 
+                                    cursor: pointer;
+                                    text-transform: uppercase;
+                                    box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4);">
+                                    📥 SCARICA SCHEDA
+                                </button>
+                            </a>
+                            <p style="color:#666; margin-top:15px; font-size:12px;">Server: Google Drive Secure Storage</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.warning("⚠️ Il protocollo è stato generato ma il link non è ancora disponibile. Contatta il Coach.")
             else:
-                st.error("Nessun protocollo trovato per questa email.")
+                st.error("❌ Nessun protocollo attivo trovato per questa email.")
     st.stop()
 # --- CONFIGURAZIONE COSTANTI ---
 DB_CLIENTI = "database_clienti"
