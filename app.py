@@ -68,14 +68,26 @@ def leggi_storico(nome):
         sheet = client.open("AREA199_DB").worksheet("Storico_Misure")
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
+        
         if not df.empty and 'Nome' in df.columns:
             target = nome.strip().lower()
-            df_f = df[df['Nome'].astype(str).str.strip().str.lower() == target]
+            # Filtraggio case-insensitive
+            df_f = df[df['Nome'].astype(str).str.strip().str.lower() == target].copy()
+            
             if not df_f.empty:
-                df_f['Data'] = pd.to_datetime(df_f['Data'], errors='coerce')
+                # Forza la colonna Data in formato datetime
+                df_f['Data'] = pd.to_datetime(df_f['Data'], dayfirst=False, errors='coerce')
+                # Assicura che i valori biometrici siano numerici per il grafico
+                colonne_numeriche = ['Peso', 'Vita', 'Fianchi'] # Aggiungi altre se necessario
+                for col in colonne_numeriche:
+                    if col in df_f.columns:
+                        df_f[col] = pd.to_numeric(df_f[col], errors='coerce')
+                
                 return df_f.sort_values(by="Data")
         return None
-    except: return None
+    except Exception as e:
+        st.error(f"Errore lettura DB: {e}")
+        return None
 
 def salva_dati_check(nome, dati):
     try:
