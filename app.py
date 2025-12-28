@@ -1033,14 +1033,14 @@ if btn_gen:
 # ==============================================================================
 
 # ==============================================================================
-# 6. EXPORT & SYNC (LOGICA CORRETTA - NO CARATTERI INVISIBILI)
+# 6. EXPORT & SYNC (CORREZIONE: BYPASS DRIVE)
 # ==============================================================================
 
 if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT & SYNC")
     
-    # 1. GENERAZIONE GRAFICI
+    # 1. GENERAZIONE GRAFICI (Non consuma quota, genera solo HTML stringa)
     grafici_html = []
     nome_atleta = st.session_state.get('last_nome', 'Atleta')
     df_hist = leggi_storico(nome_atleta)
@@ -1061,7 +1061,7 @@ if 'last_ai' in st.session_state:
         except Exception as e:
             st.warning(f"Errore rendering grafici: {e}")
 
-    # 2. GENERAZIONE REPORT HTML (Sintassi corretta)
+    # 2. GENERAZIONE REPORT HTML LOCALE
     html_report = crea_report_totale(
         nome=st.session_state['last_nome'],
         dati_ai=st.session_state['last_ai'],
@@ -1074,33 +1074,32 @@ if 'last_ai' in st.session_state:
         ffmi=st.session_state.get('last_ffmi', 0)
     )
     
-   # 3. FUNZIONE CALLBACK (SENZA DRIVE - SOLO DATABASE)
-
-def azione_invio_glide():
-    mail_sicura = st.session_state.get('last_email_sicura')
-    nome_atleta = st.session_state.get('last_nome')
-    res = st.session_state.get('last_ai')
-    
-    if mail_sicura and res:
-        with st.spinner("💾 Sincronizzazione Database (No Drive Upload)..."):
-            # 1. NON CHIAMIAMO upload_to_drive. 
-            # 2. Passiamo "DATABASE_INTERNAL" come placeholder per la colonna Link.
-            
-            ok = aggiorna_db_glide(
-                nome=nome_atleta, 
-                email=mail_sicura, 
-                dati_ai=res, 
-                link_drive="DATABASE_INTERNAL", # Placeholder, il vero dato è nel JSON nascosto
-                note_coach=res.get('warning_tecnico','')
-            )
-            
-            if ok:
-                st.success(f"✅ PROTOCOLLO SALVATO NEL DB: {mail_sicura}")
-                st.balloons()
-            else:
-                st.error("⚠️ Errore Scrittura Database (Verifica permessi Service Account su Sheets).")
-    else:
-        st.warning("⚠️ Email mancante! Inseriscila nel menu laterale.")
+    # 3. FUNZIONE CALLBACK (RIGOROSAMENTE SENZA DRIVE UPLOAD)
+    def azione_invio_glide():
+        mail_sicura = st.session_state.get('last_email_sicura')
+        nome_atleta = st.session_state.get('last_nome')
+        res = st.session_state.get('last_ai')
+        
+        if mail_sicura and res:
+            with st.spinner("💾 Sincronizzazione Database (Metodo Diretto)..."):
+                # BYPASS TOTALE DRIVE: Passiamo una stringa fittizia come link
+                # Il vero dato è salvato nella colonna nascosta tramite 'dna_scheda' dentro la funzione
+                ok = aggiorna_db_glide(
+                    nome=nome_atleta, 
+                    email=mail_sicura, 
+                    dati_ai=res, 
+                    link_drive="DB_INTERNAL_JSON", 
+                    note_coach=res.get('warning_tecnico','')
+                )
+                
+                if ok:
+                    st.success(f"✅ PROTOCOLLO SALVATO NEL DB: {mail_sicura}")
+                    st.toast("Database Aggiornato Correttamente", icon="💾")
+                    st.balloons()
+                else:
+                    st.error("⚠️ Errore Scrittura Database.")
+        else:
+            st.warning("⚠️ Email mancante! Inseriscila nel menu laterale.")
 
     # 4. TASTO UNICO
     st.download_button(
