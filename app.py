@@ -267,32 +267,37 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     """Salva il DNA della scheda (JSON) direttamente nel Database (NO DRIVE)."""
     
-    # TRASFORMIAMO IL DIZIONARIO DATI IN STRINGA DI TESTO
-    # Questo permette di salvare l'intera logica nella cella H di Sheets
-    dna_scheda = json.dumps(dati_ai)
+    # SERIALIZZAZIONE JSON (Il "DNA" della scheda)
+    dna_scheda = json.dumps(dati_ai) 
 
+    # STRUTTURA RIGA (Verifica che l'ordine corrisponda alle colonne del tuo Sheet)
+    # Colonna H (indice 8 circa) deve ospitare dna_scheda
     nuova_riga = [
-        datetime.now().strftime("%Y-%m-%d"),
-        email, 
-        nome,
-        dati_ai.get('mesociclo', 'N/D'),
-        dati_ai.get('cardio_protocol', ''),
-        note_coach,
-        dati_ai.get('analisi_clinica', ''),
-        dna_scheda  # <--- SALVIAMO I DATI PURI, NON IL LINK
+        datetime.now().strftime("%Y-%m-%d"), # Data
+        email,                               # Email
+        nome,                                # Nome
+        dati_ai.get('mesociclo', 'N/D'),     # Fase
+        dati_ai.get('cardio_protocol', ''),  # Cardio
+        note_coach,                          # Note Coach
+        dati_ai.get('analisi_clinica', ''),  # Analisi
+        dna_scheda                           # <--- IL PAYLOAD DATI (Cruciale)
     ]
     
     try:
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        # Usa SOLO lo scope spreadsheets se drive da problemi, ma meglio tenerli entrambi se leggi
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         client = gspread.authorize(creds)
         
         sheet = client.open("AREA199_DB").sheet1 
-        sheet.append_row(nuova_riga) # Invio standard
+        sheet.append_row(nuova_riga) 
         return True
     except Exception as e:
-        st.error(f"ERRORE DB: {e}")
+        st.error(f"ERRORE CRITICO DB: {e}")
         return False
 
 def recupera_protocollo_da_db(email_target):
@@ -1070,29 +1075,32 @@ if 'last_ai' in st.session_state:
     )
     
    # 3. FUNZIONE CALLBACK (SENZA DRIVE - SOLO DATABASE)
-    def azione_invio_glide():
-        mail_sicura = st.session_state.get('last_email_sicura')
-        nome_atleta = st.session_state.get('last_nome')
-        res = st.session_state.get('last_ai')
-        
-        if mail_sicura and res:
-            with st.spinner("💾 Salvataggio nel Database..."):
-                # Chiamiamo l'aggiornamento SENZA passare link_drive
-                ok = aggiorna_db_glide(
-                    nome=nome_atleta, 
-                    email=mail_sicura, 
-                    dati_ai=res, 
-                    link_drive="DATABASE_INTERNAL", # Placeholder
-                    note_coach=res.get('warning_tecnico','')
-                )
-                
-                if ok:
-                    st.success(f"✅ PROTOCOLLO ATTIVATO NEL DB: {mail_sicura}")
-                    st.balloons()
-                else:
-                    st.error("⚠️ Errore Scrittura Database.")
-        else:
-            st.warning("⚠️ Email mancante! Inseriscila nel menu laterale.")
+
+def azione_invio_glide():
+    mail_sicura = st.session_state.get('last_email_sicura')
+    nome_atleta = st.session_state.get('last_nome')
+    res = st.session_state.get('last_ai')
+    
+    if mail_sicura and res:
+        with st.spinner("💾 Sincronizzazione Database (No Drive Upload)..."):
+            # 1. NON CHIAMIAMO upload_to_drive. 
+            # 2. Passiamo "DATABASE_INTERNAL" come placeholder per la colonna Link.
+            
+            ok = aggiorna_db_glide(
+                nome=nome_atleta, 
+                email=mail_sicura, 
+                dati_ai=res, 
+                link_drive="DATABASE_INTERNAL", # Placeholder, il vero dato è nel JSON nascosto
+                note_coach=res.get('warning_tecnico','')
+            )
+            
+            if ok:
+                st.success(f"✅ PROTOCOLLO SALVATO NEL DB: {mail_sicura}")
+                st.balloons()
+            else:
+                st.error("⚠️ Errore Scrittura Database (Verifica permessi Service Account su Sheets).")
+    else:
+        st.warning("⚠️ Email mancante! Inseriscila nel menu laterale.")
 
     # 4. TASTO UNICO
     st.download_button(
