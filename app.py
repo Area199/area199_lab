@@ -922,12 +922,15 @@ if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT")
     grafici_html = []
-    df_hist = leggi_storico(st.session_state['last_nome'])
-    if df_hist is not None and len(df_hist) > 1:
-        g_br = grafico_simmetria(df_hist, "Braccio")
-        if g_br: grafici_html.append(pio.to_html(g_br, full_html=False, include_plotlyjs='cdn'))
-        g_lg = grafico_simmetria(df_hist, "Coscia")
-        if g_lg: grafici_html.append(pio.to_html(g_lg, full_html=False, include_plotlyjs='cdn'))
+   # Sostituisci la parte del grafico con questa versione Cloud-Safe
+df_hist = leggi_storico(nome) 
+if df_hist is not None and not df_hist.empty:
+    st.markdown("### 📈 TREND BIOMETRICO (Cloud Data)")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df_hist['Data'], y=df_hist['Peso'], 
+                             mode='lines+markers', line=dict(color='#ff0000')))
+    fig.update_layout(template="plotly_dark", height=300)
+    st.plotly_chart(fig, use_container_width=True)
     
     html_report = crea_report_totale(
         st.session_state['last_nome'], st.session_state['last_ai'], grafici_html, df_img, 
