@@ -367,15 +367,40 @@ def trova_img(nome, df):
     return None, None
 
 def salva_dati_check(nome, dati):
-    clean = "".join(x for x in nome if x.isalnum() or x in " _-").strip()
-    path = os.path.join("database_clienti", clean)
-    if not os.path.exists(path): os.makedirs(path)
-    dati["Data"] = datetime.now().strftime("%Y-%m-%d")
-    df_new = pd.DataFrame([dati])
-    csv_path = os.path.join(path, "storico_misure.csv")
-    if os.path.exists(csv_path): df_final = pd.concat([pd.read_csv(csv_path), df_new], ignore_index=True)
-    else: df_final = df_new
-    df_final.to_csv(csv_path, index=False)
+    try:
+        client = get_gsheet_client()
+        # Apre il DB principale
+        sh = client.open("AREA199_DB")
+        
+        # Cerca il foglio specifico
+        sheet = sh.worksheet("Storico_Misure")
+        
+        nuova_riga = [
+            dati.get("Data", datetime.now().strftime("%Y-%m-%d")),
+            nome,
+            dati.get("Peso", 0), dati.get("Collo", 0), dati.get("Vita", 0),
+            dati.get("Fianchi", 0), dati.get("Polso", 0), dati.get("Caviglia", 0),
+            dati.get("Torace", 0), dati.get("Braccio Dx", 0), dati.get("Braccio Sx", 0),
+            dati.get("Coscia Dx", 0), dati.get("Coscia Sx", 0)
+        ]
+        sheet.append_row(nuova_riga)
+        return True
+
+    except gspread.exceptions.WorksheetNotFound:
+        st.error("❌ ERRORE CRITICO: Il foglio 'Storico_Misure' NON ESISTE.")
+        st.info("Vai su Google Sheets, clicca '+' in basso e rinomina il foglio esattamente: Storico_Misure")
+        return False
+        
+    except gspread.exceptions.APIError as e:
+        st.error(f"❌ ERRORE PERMESSI (API 403): {e}")
+        st.warning("Hai condiviso il foglio con l'email del Service Account?")
+        st.code(st.secrets["gcp_service_account"]["client_email"], language="text")
+        st.markdown("Copia questa email qui sopra, vai su Google Sheets -> Condividi -> Incolla -> Editor.")
+        return False
+        
+    except Exception as e:
+        st.error(f"❌ ERRORE GENERICO: {str(e)}")
+        return False)
 
 def grafico_trend(df, col_name, colore="#ff0000"):
     if col_name not in df.columns: return None
@@ -848,6 +873,7 @@ df_img = ottieni_db_immagini()
 # --- COACH VIEW (SIDEBAR CORRETTA) ---
 # Se non vedi il pulsante, è colpa dell'indentazione. Questo codice la fissa.
 
+# --- COACH VIEW (SIDEBAR CORRETTA E ALLINEATA) ---
 with st.sidebar:
     st.header("🗂 PROFILO")
     nome = st.text_input("Nome Cliente")
@@ -887,7 +913,9 @@ with st.sidebar:
     
     misure = { "Altezza": alt, "Peso": peso, "Collo": collo, "Vita": addome, "Addome": addome, "Fianchi": fianchi, "Polso": polso, "Caviglia": caviglia, "Torace": torace, "Braccio Dx": braccio_dx, "Braccio Sx": braccio_sx, "Coscia Dx": coscia_dx, "Coscia Sx": coscia_sx }
     
-    # PULSANTE SALVATAGGIO STORICO
+    # -----------------------------------------------------------------------
+    # PULSANTE SALVATAGGIO (DEBUG ATTIVO)
+    # -----------------------------------------------------------------------
     if st.button("💾 ARCHIVIA CHECK (CLOUD)"):
         if nome:
             with st.spinner("Connessione al Database..."):
@@ -896,12 +924,15 @@ with st.sidebar:
                     st.toast("✅ Dati salvati su Google Sheets!", icon="☁️")
                     st.success("Storico aggiornato nel Cloud.")
                 else:
-                    st.error("ERRORE SALVATAGGIO.")
-                    st.info("Hai creato il foglio 'Storico_Misure' su Google Sheets?")
+                    # L'errore specifico viene stampato dalla funzione salva_dati_check
+                    pass 
         else: st.error("Inserire Nome per archiviare.")
     
     st.markdown("---")
-    # PULSANTE GENERAZIONE (FUORI DA OGNI IF)
+    
+    # -----------------------------------------------------------------------
+    # PULSANTE GENERAZIONE (ORA È FUORI DAL BLOCCO PRECEDENTE)
+    # -----------------------------------------------------------------------
     btn_gen = st.button("🧠 ELABORA SCHEDA")
 
 def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf, somatotipo, whr, ffmi, eta=30):
