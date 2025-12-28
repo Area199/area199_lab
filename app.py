@@ -28,38 +28,44 @@ def leggi_storico(nome):
 
 def recupera_protocollo_da_db(email_target):
     """
-    Scansiona il Google Sheet AREA199_DB per trovare l'ultima scheda
-    associata all'email dell'atleta.
+    Scansiona il Google Sheet per trovare l'ultima scheda.
+    Include SCOPES ESTESI per evitare l'errore 403.
     """
     if not email_target: return None, None
     
     try:
-        # 1. Autenticazione Silenziosa
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        # 1. DEFINIZIONE SCOPES (Qui era l'errore)
+        # Dobbiamo dichiarare esplicitamente che vogliamo accedere sia ai Fogli che al Drive
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        # 2. Autenticazione
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
         client = gspread.authorize(creds)
         
-        # 2. Lettura Database
+        # 3. Lettura Database
         sheet = client.open("AREA199_DB").sheet1
-        data = sheet.get_all_records() # Restituisce una lista di dizionari
+        data = sheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # 3. Filtraggio (Case Insensitive)
-        # Assumiamo che la colonna B si chiami 'Email_Cliente' o simile
-        # Se nel foglio si chiama 'Email', cambia 'Email_Cliente' in 'Email' qui sotto
+        # 4. Filtraggio
         col_email = 'Email_Cliente' if 'Email_Cliente' in df.columns else 'Email'
         
+        # Normalizzazione per ricerca sicura (rimuove spazi e maiuscole)
         match = df[df[col_email].astype(str).str.strip().str.lower() == email_target.strip().lower()]
         
         if not match.empty:
-            # Restituisce l'ultima riga (la più recente)
             ultima_scheda = match.iloc[-1]
             return ultima_scheda, ultima_scheda['Nome']
             
         return None, None
 
     except Exception as e:
-        st.error(f"ERRORE CONNESSIONE DB: {e}")
+        # Questo print apparirà nei log se c'è ancora un problema
+        print(f"DEBUG ERROR: {e}") 
+        st.error(f"ERRORE SISTEMA: {e}")
         return None, None
 
 def grafico_trend(df, col_name, colore="#ff0000"):
