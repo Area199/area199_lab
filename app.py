@@ -259,6 +259,10 @@ if pwd == "PETRUZZI199":
         sesso = st.radio("Sesso", ["Uomo", "Donna"])
         goal = st.text_area("Obiettivo")
         durata = st.number_input("Durata Seduta (min)", 30, 120, 90)
+# --- CAMPI RIPRISTINATI ---
+        limitazioni = st.text_area("Limitazioni Tecniche (es. Ernia, Infortuni)", help="Inserisci patologie o impedimenti meccanici")
+        giorni = st.multiselect("Giorni di Allenamento", ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"], default=["LUN", "MER", "VEN"])
+        # --------------------------
         
         st.markdown("---")
         peso = st.number_input("Peso", 40.0, 150.0, 75.0)
@@ -278,8 +282,19 @@ if pwd == "PETRUZZI199":
 
     if btn:
         som, ff, bf = calcola_somatotipo_scientifico(peso, alt, polso, vita, fianchi, collo, sesso)
-        input_ai = {"goal": goal, "durata_target": durata, "meta_bio": f"{som}, FFMI {ff}, BF {bf}%", "limitazioni": "", "custom_instructions": ""}
+        
+        # Inclusione dei parametri ripristinati nel prompt per l'AI
+        input_ai = {
+            "goal": goal, 
+            "durata_target": durata, 
+            "meta_bio": f"{som}, FFMI {ff}, BF {bf}%", 
+            "limitazioni": limitazioni,         # <-- RIPRISTINATO
+            "giorni_selezionati": giorni,       # <-- RIPRISTINATO
+            "custom_instructions": ""
+        }
+        
         res = genera_protocollo_petruzzi(input_ai, api)
+        # ... resto del codice
         
         if "errore" not in res:
             st.session_state['ai'] = res; st.session_state['n'] = n; st.session_state['e'] = e
