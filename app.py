@@ -327,18 +327,16 @@ def recupera_protocollo_da_db(email_target):
         st.error(f"Errore lettura Cloud: {e}")
         return None, None
 
-def upload_to_drive(file_content, file_name, folder_id="UNUSED"):
+def upload_to_drive(file_content, file_name, folder_id="NON_USATO"):
     """
-    [OPTIMIZED BY PETRUZZI LOGIC]
-    Funzione NEUTRALIZZATA.
-    
-    Motivo: Il Service Account ha Quota Storage = 0.
-    Azione: Bypass completo dell'API Drive.
-    Output: Restituisce un placeholder logico. Il salvataggio reale avviene via JSON su DB.
+    OVERRIDE PETRUZZI: Funzione neutralizzata.
+    Bypassa l'API Drive per evitare errore 'Storage Quota Exceeded'.
+    Restituisce un placeholder. Il dato reale viaggia nel JSON su Database.
     """
-    # Nessuna logica try/except necessaria perché non eseguiamo codice a rischio.
-    # Ritorniamo una stringa fittizia per mantenere la coerenza dei tipi di dato.
-    return "DRIVE_BYPASS_ACTIVE_NO_LINK"
+    # Nessuna chiamata a Google Drive.
+    # Nessuna connessione. 
+    # Nessun errore possibile.
+    return "DRIVE_UPLOAD_DISABLED_QUOTA_FULL"
         
         # 1. Preparazione File Temporaneo
         temp_path = f"temp_{file_name}"
@@ -1077,29 +1075,30 @@ if 'last_ai' in st.session_state:
     )
     
     # 3. FUNZIONE CALLBACK (RIGOROSAMENTE SENZA DRIVE UPLOAD)
+    # Funzione interna al blocco if 'last_ai' in st.session_state:
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
         nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
-            with st.spinner("💾 Sincronizzazione Database (Metodo Diretto)..."):
-                # BYPASS TOTALE DRIVE: Passiamo una stringa fittizia come link
-                # Il vero dato è salvato nella colonna nascosta tramite 'dna_scheda' dentro la funzione
+            with st.spinner("💾 Salvataggio nel Database (Bypass Drive)..."):
+                
+                # Chiamiamo l'aggiornamento Database.
+                # Nota: Passiamo una stringa fissa come link, tanto il dato è nel JSON nascosto.
                 ok = aggiorna_db_glide(
                     nome=nome_atleta, 
                     email=mail_sicura, 
                     dati_ai=res, 
-                    link_drive="DB_INTERNAL_JSON", 
+                    link_drive="NO_DRIVE_LINK", 
                     note_coach=res.get('warning_tecnico','')
                 )
                 
                 if ok:
-                    st.success(f"✅ PROTOCOLLO SALVATO NEL DB: {mail_sicura}")
-                    st.toast("Database Aggiornato Correttamente", icon="💾")
+                    st.success(f"✅ PROTOCOLLO SALVATO: {mail_sicura}")
                     st.balloons()
                 else:
-                    st.error("⚠️ Errore Scrittura Database.")
+                    st.error("⚠️ Errore Scrittura Database (Controlla permessi Sheet e non Drive).")
         else:
             st.warning("⚠️ Email mancante! Inseriscila nel menu laterale.")
 
