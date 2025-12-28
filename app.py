@@ -64,66 +64,12 @@ st.markdown("""
 # FUNZIONI CORE (DATABASE & LOGICA)
 # ==============================================================================
 
-def get_gsheet_client():
-    """Funzione helper per autenticazione Google (Centralizzata)."""
-    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-    return gspread.authorize(creds)
-
 def leggi_storico(nome):
-    """
-    [AGGIORNATA] Legge lo storico dal foglio Google 'Storico_Misure'.
-    """
-    try:
-        client = get_gsheet_client()
-        sheet = client.open("AREA199_DB").worksheet("Storico_Misure")
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        if not df.empty and 'Nome' in df.columns:
-            target = nome.strip().lower()
-            df_filtered = df[df['Nome'].astype(str).str.strip().str.lower() == target]
-            
-            if not df_filtered.empty:
-                df_filtered['Data'] = pd.to_datetime(df_filtered['Data'], errors='coerce')
-                df_filtered = df_filtered.sort_values(by="Data", ascending=True)
-                return df_filtered
-        return None
-    except Exception as e:
-        return None
+    """Legge il file CSV dell'atleta specifico."""
+    clean = "".join(x for x in nome if x.isalnum() or x in " _-").strip()
+    p = os.path.join("database_clienti", clean, "storico_misure.csv")
+    return pd.read_csv(p) if os.path.exists(p) else None
 
-def salva_dati_check(nome, dati):
-    """
-    [AGGIORNATA] Salva i dati direttamente su Google Sheets.
-    """
-    try:
-        client = get_gsheet_client()
-        sheet = client.open("AREA199_DB").worksheet("Storico_Misure")
-        
-        nuova_riga = [
-            dati.get("Data", datetime.now().strftime("%Y-%m-%d")),
-            nome,
-            dati.get("Peso", 0),
-            dati.get("Collo", 0),
-            dati.get("Vita", 0),
-            dati.get("Fianchi", 0),
-            dati.get("Polso", 0),
-            dati.get("Caviglia", 0),
-            dati.get("Torace", 0),
-            dati.get("Braccio Dx", 0),
-            dati.get("Braccio Sx", 0),
-            dati.get("Coscia Dx", 0),
-            dati.get("Coscia Sx", 0)
-        ]
-        
-        sheet.append_row(nuova_riga)
-        return True
-    except Exception as e:
-        st.error(f"⚠️ ERRORE SALVATAGGIO CLOUD: {e}")
-        st.warning("Verifica di aver creato il foglio 'Storico_Misure' su Google Sheets.")
-        return False
-
-@st.cache_data
 def ottieni_db_immagini():
     try:
         url = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
@@ -143,20 +89,34 @@ def ottieni_db_immagini():
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     """
-    Salva il protocollo (JSON) nel Database principale (Foglio1).
+    Salva il DNA della scheda (JSON) direttamente nel Database.
+    BYPASS DRIVE: Il 'link_drive' è fittizio, i dati sono nel 'dna_scheda'.
     """
+    # SERIALIZZAZIONE JSON (Il "DNA" della scheda)
     dna_scheda = json.dumps(dati_ai) 
+
+    # STRUTTURA RIGA (Verifica che l'ordine corrisponda alle colonne del tuo Sheet)
     nuova_riga = [
-        datetime.now().strftime("%Y-%m-%d"), 
-        email, nome, 
-        dati_ai.get('mesociclo', 'N/D'), 
-        dati_ai.get('cardio_protocol', ''), 
-        note_coach, 
-        dati_ai.get('analisi_clinica', ''), 
-        dna_scheda 
+        datetime.now().strftime("%Y-%m-%d"), # Data
+        email,                               # Email
+        nome,                                # Nome
+        dati_ai.get('mesociclo', 'N/D'),     # Fase
+        dati_ai.get('cardio_protocol', ''),  # Cardio
+        note_coach,                          # Note Coach
+        dati_ai.get('analisi_clinica', ''),  # Analisi
+        dna_scheda                           # <--- IL PAYLOAD DATI (Cruciale)
     ]
+    
     try:
-        client = get_gsheet_client() 
+        # Usa SOLO lo scope spreadsheets se drive da problemi
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        s_info = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(s_info, scopes=scopes)
+        client = gspread.authorize(creds)
+        
         sheet = client.open("AREA199_DB").sheet1 
         sheet.append_row(nuova_riga) 
         return True
@@ -165,12 +125,21 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         return False
 
 def recupera_protocollo_da_db(email_target):
+    """Legge la colonna Link_Scheda (H) come sorgente dati JSON."""
     if not email_target: return None, None
     try:
-        client = get_gsheet_client() 
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        client = gspread.authorize(creds)
         sheet = client.open("AREA199_DB").sheet1
+        
         records = sheet.get_all_records()
         df = pd.DataFrame(records)
+        
+        # Colonna Email (Adatta se il nome cambia)
         col_email = 'Email_Cliente' if 'Email_Cliente' in df.columns else 'Email'
         
         user_data = df[df[col_email].astype(str).str.strip().str.lower() == email_target.strip().lower()]
@@ -178,12 +147,20 @@ def recupera_protocollo_da_db(email_target):
         if not user_data.empty:
             last_record = user_data.iloc[-1]
             raw_json = last_record['Link_Scheda'] 
+            # Se è un JSON valido lo parsiamo, altrimenti torniamo None
             if isinstance(raw_json, str) and raw_json.startswith('{'):
                 return json.loads(raw_json), last_record['Nome']
+            
         return None, None
-    except Exception as e: return None, None
+    except Exception as e:
+        # Silenzioso o log
+        return None, None
 
 def upload_to_drive(file_content, file_name, folder_id="NON_USATO"):
+    """
+    [LOBOTOMIZZATA] Funzione inerte. 
+    Restituisce stringa fissa. Impedisce errore 403 Quota.
+    """
     return "DRIVE_DISABILITATO"
 
 # ==============================================================================
@@ -314,6 +291,17 @@ def trova_img(nome, df):
         return best_match['img1'], best_match['img2']
     return None, None
 
+def salva_dati_check(nome, dati):
+    clean = "".join(x for x in nome if x.isalnum() or x in " _-").strip()
+    path = os.path.join("database_clienti", clean)
+    if not os.path.exists(path): os.makedirs(path)
+    dati["Data"] = datetime.now().strftime("%Y-%m-%d")
+    df_new = pd.DataFrame([dati])
+    csv_path = os.path.join(path, "storico_misure.csv")
+    if os.path.exists(csv_path): df_final = pd.concat([pd.read_csv(csv_path), df_new], ignore_index=True)
+    else: df_final = df_new
+    df_final.to_csv(csv_path, index=False)
+
 def grafico_trend(df, col_name, colore="#ff0000"):
     if col_name not in df.columns: return None
     df_clean = df[df[col_name] > 0].copy()
@@ -349,7 +337,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
         dati_input['sesso']
     )
     
-    # 2. ANALISI TREND STORICO
+    # 2. ANALISI TREND STORICO (IL FEEDBACK LOOP)
     trend_analysis = "Nessun dato storico (Primo Check)."
     try:
         df_hist = leggi_storico(dati_input['nome'])
@@ -361,7 +349,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
                 trend_analysis = f"Variazione Peso rispetto ultimo check: {delta_peso}kg. (Se negativo=Dimagrimento, Positivo=Massa/Stallo)."
     except: pass
 
-    # 3. VOLUME TARGET
+    # 3. VOLUME TARGET TASSATIVO
     minuti_totali = dati_input['durata_target']
     target_ex = int(minuti_totali / 8.5)
     if minuti_totali > 45 and target_ex < 6: target_ex = 6
@@ -371,7 +359,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
     if not giorni_lista: giorni_lista = ["Lunedì", "Mercoledì", "Venerdì"]
     giorni_str = ", ".join(giorni_lista).upper()
     
-    # 5. PROMPT UNIFICATO
+    # 5. PROMPT UNIFICATO (INTEGRATO CON Z1/Z2 E MATRICE)
     system_prompt = f"""
     SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
     
