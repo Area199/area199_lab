@@ -238,35 +238,41 @@ api = st.secrets["OPENAI_API_KEY"]
 with st.sidebar:
     n = st.text_input("Atleta")
     
-    # --- SPOSTA QUI IL BLOCCO GRAFICO ---
+    # --- INIZIO NUOVA LOGICA GRAFICO ---
     if n:
         df_storico = leggi_storico(n)
         if df_storico is not None and not df_storico.empty:
-            st.markdown(f"### TREND BIOMETRICO: {n.upper()}")
-            
+            st.markdown(f"### TREND: {n.upper()}")
             fig = go.Figure()
-            # Plot Peso
             fig.add_trace(go.Scatter(x=df_storico['Data'], y=df_storico['Peso'], 
-                                     mode='lines+markers', name='Peso (kg)',
+                                     mode='lines+markers', name='Peso',
                                      line=dict(color='#ff0000', width=2)))
-            # Plot Vita (opzionale, utile per monitorare grasso viscerale)
-            fig.add_trace(go.Scatter(x=df_storico['Data'], y=df_storico['Vita'], 
-                                     mode='lines+markers', name='Addome (cm)',
-                                     line=dict(color='#ffffff', width=2, dash='dot')))
-            
-            fig.update_layout(
-                template="plotly_dark",
-                height=250,
-                margin=dict(l=10, r=10, t=30, b=10),
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
+            fig.update_layout(template="plotly_dark", height=200, 
+                              margin=dict(l=5, r=5, t=5, b=5),
+                              showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
-    # -----------------------------------
+    # --- FINE NUOVA LOGICA GRAFICO ---
 
     e = st.text_input("Email Glide")
-    # ... resto del codice (eta, sesso, goal, ecc.)
+    eta = st.number_input("Età", 18, 80, 30)
+    sesso = st.radio("Sesso", ["Uomo", "Donna"])
+    goal = st.text_area("Obiettivo")
+    durata = st.number_input("Durata Seduta (min)", 30, 120, 90)
+    
+    st.markdown("---")
+    peso = st.number_input("Peso", 40.0, 150.0, 75.0)
+    alt = st.number_input("Altezza", 140, 220, 175)
+    collo = st.number_input("Collo", 20.0, 60.0, 38.0)
+    vita = st.number_input("Addome", 40.0, 150.0, 85.0)
+    fianchi = st.number_input("Fianchi", 40.0, 150.0, 95.0)
+    polso = st.number_input("Polso", 10.0, 25.0, 17.0)
+    
+    misure = {"Peso":peso, "Altezza":alt, "Collo":collo, "Vita":vita, "Fianchi":fianchi, "Polso":polso}
+    
+    if st.button("💾 ARCHIVIA CHECK"):
+        if salva_dati_check(n, misure): st.success("Cloud Updated.")
+    
+    btn = st.button("🧠 ELABORA SCHEDA")
 
     if btn:
         som, ff, bf = calcola_somatotipo_scientifico(peso, alt, polso, vita, fianchi, collo, sesso)
