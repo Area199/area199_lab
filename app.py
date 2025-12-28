@@ -931,31 +931,40 @@ if btn_gen:
 # 6. EXPORT & SYNC (NORMALIZZAZIONE INTEGRALE)
 # ==============================================================================
 
+# ==============================================================================
+# 6. EXPORT & SYNC (LOGICA CORRETTA - NO CARATTERI INVISIBILI)
+# ==============================================================================
+
 if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT & SYNC")
     
     # 1. GENERAZIONE GRAFICI
     grafici_html = []
-    df_hist = leggi_storico(st.session_state['last_nome'])
+    nome_atleta = st.session_state.get('last_nome', 'Atleta')
+    df_hist = leggi_storico(nome_atleta)
     
     if df_hist is not None and len(df_hist) > 1:
         try:
             g_br = grafico_simmetria(df_hist, "Braccio")
             if g_br: grafici_html.append(pio.to_html(g_br, full_html=False, include_plotlyjs='cdn'))
+            
             g_lg = grafico_simmetria(df_hist, "Coscia")
             if g_lg: grafici_html.append(pio.to_html(g_lg, full_html=False, include_plotlyjs='cdn'))
+            
             g_peso = grafico_trend(df_hist, "Peso", colore="#ff0000") 
             if g_peso: grafici_html.append(pio.to_html(g_peso, full_html=False, include_plotlyjs='cdn'))
+            
             g_vita = grafico_trend(df_hist, "Vita", colore="#ffff00") 
             if g_vita: grafici_html.append(pio.to_html(g_vita, full_html=False, include_plotlyjs='cdn'))
         except Exception as e:
-            st.error(f"Errore rendering grafici: {e}")
+            st.warning(f"Errore rendering grafici: {e}")
 
     # 2. GENERAZIONE REPORT HTML
+    # Nota: Assicurati che non ci siano parentesi orfane qui sotto
     html_report = crea_report_totale(
-        nome=st.session_state['last_nome'],
-        dati_ai=st.session_state['last_ai'],
+        nome=nome_atleta,
+        dati_ai=st.session_state.get('last_ai', {}),
         grafici_html_list=grafici_html,
         df_img=df_img,
         limitazioni=st.session_state.get('last_limitazioni', ''),
@@ -968,7 +977,6 @@ if 'last_ai' in st.session_state:
     # 3. DEFINIZIONE CALLBACK AZIONE CLOUD
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
-        nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
@@ -984,19 +992,19 @@ if 'last_ai' in st.session_state:
                     note_coach=res.get('warning_tecnico','')
                 )
                 if ok:
-                    st.toast(f"✅ PROTOCOLLO SINCRONIZZATO: {mail_sicura}", icon="🚀")
+                    st.toast(f"✅ PROTOCOLLO SINCRONIZZATO", icon="🚀")
                 else:
-                    st.error("⚠️ Errore durante la scrittura su Google Sheets.")
+                    st.error("⚠️ Errore scrittura database.")
             else:
                 st.error("⚠️ Fallimento Upload Drive.")
         else:
-            st.toast("⚠️ Email non trovata!", icon="📧")
+            st.error("⚠️ Dati mancanti (Email/Risultato AI) per la sincronizzazione.")
 
-    # 4. BOTTONE UNICO DI DOWNLOAD E SINCRONIZZAZIONE
+    # 4. DOWNLOAD BUTTON (Attiva il callback)
     st.download_button(
         label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
         data=html_report, 
-        file_name=f"AREA199_{st.session_state['last_nome']}.html", 
+        file_name=f"AREA199_{nome_atleta}.html", 
         mime="text/html",
         use_container_width=True,
         on_click=azione_invio_glide 
