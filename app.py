@@ -231,49 +231,50 @@ st.sidebar.title("🔐 AREA 199 ACCESS")
 pwd = st.sidebar.text_input("Password", type="password")
 
 if pwd == "PETRUZZI199":
-    # --- COACH PANEL --- (Tutte queste righe devono essere rientrate)
+    # --- COACH PANEL ---
+    # Queste righe devono avere 4 spazi di rientro rispetto a 'if'
     df_i = ottieni_db_immagini()
     api = st.secrets["OPENAI_API_KEY"]
     
     with st.sidebar:
         n = st.text_input("Atleta")
-        # ... resto del codice
-    
-    # --- INIZIO NUOVA LOGICA GRAFICO ---
-    if n:
-        df_storico = leggi_storico(n)
-        if df_storico is not None and not df_storico.empty:
-            st.markdown(f"### TREND: {n.upper()}")
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df_storico['Data'], y=df_storico['Peso'], 
-                                     mode='lines+markers', name='Peso',
-                                     line=dict(color='#ff0000', width=2)))
-            fig.update_layout(template="plotly_dark", height=200, 
-                              margin=dict(l=5, r=5, t=5, b=5),
-                              showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig, use_container_width=True)
-    # --- FINE NUOVA LOGICA GRAFICO ---
+        
+        # Logica Grafico Storico
+        if n:
+            df_storico = leggi_storico(n)
+            if df_storico is not None and not df_storico.empty:
+                st.markdown(f"### TREND: {n.upper()}")
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=df_storico['Data'], y=df_storico['Peso'], 
+                                         mode='lines+markers', name='Peso',
+                                         line=dict(color='#ff0000', width=2)))
+                fig.update_layout(template="plotly_dark", height=180, 
+                                  margin=dict(l=5, r=5, t=5, b=5),
+                                  showlegend=False, paper_bgcolor='rgba(0,0,0,0)', 
+                                  plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
 
-    e = st.text_input("Email Glide")
-    eta = st.number_input("Età", 18, 80, 30)
-    sesso = st.radio("Sesso", ["Uomo", "Donna"])
-    goal = st.text_area("Obiettivo")
-    durata = st.number_input("Durata Seduta (min)", 30, 120, 90)
-    
-    st.markdown("---")
-    peso = st.number_input("Peso", 40.0, 150.0, 75.0)
-    alt = st.number_input("Altezza", 140, 220, 175)
-    collo = st.number_input("Collo", 20.0, 60.0, 38.0)
-    vita = st.number_input("Addome", 40.0, 150.0, 85.0)
-    fianchi = st.number_input("Fianchi", 40.0, 150.0, 95.0)
-    polso = st.number_input("Polso", 10.0, 25.0, 17.0)
-    
-    misure = {"Peso":peso, "Altezza":alt, "Collo":collo, "Vita":vita, "Fianchi":fianchi, "Polso":polso}
-    
-    if st.button("💾 ARCHIVIA CHECK"):
-        if salva_dati_check(n, misure): st.success("Cloud Updated.")
-    
-    btn = st.button("🧠 ELABORA SCHEDA")
+        e = st.text_input("Email Glide")
+        eta = st.number_input("Età", 18, 80, 30)
+        sesso = st.radio("Sesso", ["Uomo", "Donna"])
+        goal = st.text_area("Obiettivo")
+        durata = st.number_input("Durata Seduta (min)", 30, 120, 90)
+        
+        st.markdown("---")
+        peso = st.number_input("Peso", 40.0, 150.0, 75.0)
+        alt = st.number_input("Altezza", 140, 220, 175)
+        collo = st.number_input("Collo", 20.0, 60.0, 38.0)
+        vita = st.number_input("Addome", 40.0, 150.0, 85.0)
+        fianchi = st.number_input("Fianchi", 40.0, 150.0, 95.0)
+        polso = st.number_input("Polso", 10.0, 25.0, 17.0)
+        
+        misure = {"Peso":peso, "Altezza":alt, "Collo":collo, "Vita":vita, "Fianchi":fianchi, "Polso":polso}
+        
+        if st.button("💾 ARCHIVIA CHECK"):
+            if salva_dati_check(n, misure): 
+                st.success("Cloud Updated.")
+        
+        btn = st.button("🧠 ELABORA SCHEDA")
 
     if btn:
         som, ff, bf = calcola_somatotipo_scientifico(peso, alt, polso, vita, fianchi, collo, sesso)
