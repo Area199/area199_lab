@@ -204,11 +204,12 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # ==============================================================================
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
-    """Sincronizzazione Serverless: Salva i dati grezzi in Colonna H."""
-    # Convertiamo la scheda in testo per salvarla direttamente nel foglio
+    """Salva i dati della scheda direttamente nel foglio (Colonna H)."""
+    # Trasformiamo la scheda in testo per salvarla nel db
     import json
-    scheda_json = json.dumps(dati_ai) 
+    scheda_testo = json.dumps(dati_ai)
     
+    # La colonna H (ultimo elemento) ora contiene i DATI, non il LINK
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -217,7 +218,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         dati_ai.get('cardio_protocol', ''),
         note_coach,
         dati_ai.get('analisi_clinica', ''),
-        scheda_json # <--- QUI SALVIAMO I DATI, NON IL LINK
+        scheda_testo 
     ]
     
     try:
@@ -230,7 +231,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         sheet.append_row(nuova_riga)
         return True
     except Exception as e:
-        st.error(f"ERRORE DB: {e}")
+        st.error(f"ERRORE SCRITTURA DB: {e}")
         return False
 
 def recupera_protocollo_da_db(email_target):
@@ -1005,38 +1006,41 @@ if 'last_ai' in st.session_state:
    # ... (questo va alla fine della sezione IF IS_COACH) ...
 
     # 3. FUNZIONE DI INVIO DIRETTO (SENZA DRIVE)
-    def azione_invio_glide():
-        mail_sicura = st.session_state.get('last_email_sicura')
-        nome_atleta = st.session_state.get('last_nome')
+    # Funzione di salvataggio diretto (Senza Drive)
+    def azione_invio_diretto():
+        mail = st.session_state.get('last_email_sicura')
+        nome = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
-        if mail_sicura and res:
-            with st.spinner("💾 Salvataggio dati nel Database (Bypass Drive)..."):
-                # Chiamiamo l'aggiornamento senza passare link_drive
+        if mail and res:
+            with st.spinner("💾 Salvataggio nel Database..."):
+                # Chiamiamo l'aggiornamento SENZA passare link_drive (perché non usiamo più Drive)
                 ok = aggiorna_db_glide(
-                    nome=nome_atleta, 
-                    email=mail_sicura, 
+                    nome=nome, 
+                    email=mail, 
                     dati_ai=res, 
                     note_coach=res.get('warning_tecnico','')
                 )
                 if ok:
-                    st.toast(f"✅ DATI SALVATI: {mail_sicura}", icon="🚀")
-                    st.success("Protocollo archiviato nel Database.")
+                    st.toast(f"✅ DATI SALVATI: {mail}", icon="🚀")
+                    st.success("Protocollo salvato nel Database.")
                 else:
-                    st.error("Errore scrittura Database.")
+                    st.error("Errore Database.")
         else:
-            st.warning("Email non trovata. Inseriscila nel campo Email Cliente.")
+            st.warning("Email mancante.")
 
-    # 4. IL BOTTONE
-    st.download_button(
-        label="📥 SCARICA COPIA LOCALE (HTML)", 
-        data=html_report, 
-        file_name=f"AREA199_{st.session_state['last_nome']}.html", 
-        mime="text/html"
-    )
-    
-    st.button(
-        "☁️ INVIA AL DATABASE (CLICCA QUI)", 
-        on_click=azione_invio_glide, 
-        type="primary"
-    )
+    # Due tasti separati: Uno per scaricare il file, uno per salvare sul DB
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        st.download_button(
+            label="📥 SCARICA COPIA LOCALE", 
+            data=html_report, 
+            file_name=f"AREA199_{st.session_state['last_nome']}.html", 
+            mime="text/html"
+        )
+    with col_btn2:
+        st.button(
+            "☁️ SALVA NEL DATABASE", 
+            on_click=azione_invio_diretto, 
+            type="primary"
+        )
