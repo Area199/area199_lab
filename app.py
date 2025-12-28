@@ -168,31 +168,36 @@ def trova_img(nome, df):
 def genera_protocollo_petruzzi(dati_input, api_key):
     client = OpenAI(api_key=api_key)
     
-    # Calcolo volume basato su durata e tipo frequenza
-    target_ex = int(dati_input['durata_target'] / 9) 
-    
+    # Calcolo volume basato sulla saturazione della durata (Punto 3 della tua logica)
+    target_ex = dati_input.get('volume_esercizi', 8)
+
     system_prompt = f"""
     SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
-    STILE: HARD SCIENCE, MINIMALISTA, RIGOROSO.
-    
-    PARAMETRI BIOMETRICI: {dati_input['meta_bio']}
-    LIMITAZIONI CLINICHE: {dati_input['limitazioni']}
-    FREQUENZA RICHIESTA: {dati_input['frequenza_target']}
-    GIORNI DISPONIBILI: {dati_input['giorni_selezionati']}
-    VOLUME TARGET: {target_ex} esercizi per seduta.
+    NON SEI UN ASSISTENTE. SEI UN MENTORE TECNICO, FREDDO, SCIENTIFICO.
+    RIVOLGITI COL "TU". TONO: DARK SCIENCE.
 
-    REGOLE DI GENERAZIONE:
-    1. Se FREQUENZA = MULTIFREQUENZA, usa split Upper/Lower o PPL.
-    2. Se FREQUENZA = MONOFREQUENZA, usa split per gruppi muscolari singoli.
-    3. Rispetta rigorosamente le LIMITAZIONI CLINICHE (es. no carichi assiali se Ernia).
-    
+    MATRICE TECNICA IMPOSTA:
+    - MORFOLOGIA: {dati_input['meta_bio']}
+    - LIMITAZIONI CLINICHE: {dati_input['limitazioni']}
+    - GIORNI DISPONIBILI: {dati_input['giorni']}
+    - FREQUENZA: {dati_input['frequenza']}
+    - VOLUME TARGET: {target_ex} ESERCIZI PER OGNI SEDUTA.
+
+    GERARCHIA OPERATIVA AREA 199:
+    1. PRIORITÀ: Forza (RPE 8-9) -> Tensione Meccanica -> Stress Metabolico -> Core.
+    2. CARDIO: Obbligatorio in %FTP e Zone Z2. Calcola su età {dati_input.get('eta', 30)}.
+    3. STRUTTURA: Devi generare una tabella per OGNI GIORNO indicato nei giorni disponibili.
+
     OUTPUT JSON RIGIDO:
     {{
         "mesociclo": "FASE",
         "analisi_clinica": "ANALISI...",
         "warning_tecnico": "ORDINE...",
         "cardio_protocol": "Z2 FTP...",
-        "tabella": {{ "GIORNO": [ {{"Esercizio": "...", "Sets": "...", "Reps": "...", "Recupero": "...", "TUT": "...", "Esecuzione": "...", "Note": "..." }} ] }}
+        "tabella": {{ 
+            "LUNEDI": [ {{"Esercizio": "...", "Sets": "...", "Reps": "...", "Recupero": "...", "TUT": "...", "Esecuzione": "...", "Note": "..." }} ],
+            "GIOVEDI": [ ... ] 
+        }}
     }}
     """
     try:
@@ -201,7 +206,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt}, 
-                {"role": "user", "content": f"Genera protocollo per obiettivo: {dati_input['goal']}"}
+                {"role": "user", "content": f"Genera protocollo per: {dati_input['goal']}"}
             ]
         )
         return json.loads(res.choices[0].message.content)
@@ -292,24 +297,26 @@ if pwd == "PETRUZZI199":
         
         btn = st.button("🧠 ELABORA SCHEDA")
 
-    if btn:
-        som, ff, bf = calcola_somatotipo_scientifico(peso, alt, polso, vita, fianchi, collo, sesso)
-        
-        # ASSICURATI CHE QUESTA RIGA ESISTA E PRENDA IL VALORE DAL MULTISELECT
-        tipo_freq = "MULTIFREQUENZA" if multi_freq else "MONOFREQUENZA"
-        
-        input_ai = {
-            "goal": goal, 
-            "durata_target": durata, 
-            "meta_bio": f"{som}, FFMI {ff}, BF {bf}%", 
-            "limitazioni": limitazioni,
-            "giorni_selezionati": giorni,       # <--- QUESTA CHIAVE DEVE ESSERE PRESENTE
-            "frequenza_target": tipo_freq,
-            "custom_instructions": ""
-        }
-        
-        with st.spinner("ANALISI BIOMECCANICA IN CORSO..."):
-            res = genera_protocollo_petruzzi(input_ai, api)
+   if btn:
+    # 1. DIAGNOSI BIOMETRICA (Preprocessing)
+    som, ff, bf = calcola_somatotipo_scientifico(peso, alt, polso, vita, fianchi, collo, sesso)
+    
+    # 2. CALCOLO ALGORITMICO VOLUME (Punto 3 della tua logica)
+    # Calcolo basato sulla saturazione della durata target
+    n_esercizi_target = int(durata / 9.5) # Coefficiente medio (Set + Recupero + Transizione)
+
+    input_ai = {
+        "goal": goal,
+        "meta_bio": f"Somatotipo: {som}, FFMI: {ff}, BF: {bf}%",
+        "limitazioni": limitazioni,
+        "giorni": giorni, # Lista dei giorni selezionati dal multiselect
+        "volume_esercizi": n_esercizi_target,
+        "frequenza": "MULTIFREQUENZA (PPL/UL)" if multi_freq else "MONOFREQUENZA (SPLIT DISTRETTI)",
+        "eta": eta
+    }
+    
+    # Esecuzione Motore AI
+    res = genera_protocollo_petruzzi(input_ai, api)
             # ... resto del codice
         
         if "errore" not in res:
