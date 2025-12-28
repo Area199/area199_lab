@@ -14,9 +14,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-# ==============================================================================
-# CONFIGURAZIONE
-# ==============================================================================
 st.set_page_config(page_title="AREA 199 | Dr. Petruzzi", layout="wide", page_icon="💀")
 
 st.markdown("""
@@ -39,10 +36,6 @@ st.markdown("""
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
-
-# ==============================================================================
-# DATABASE CLOUD
-# ==============================================================================
 
 def get_gsheet_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -120,10 +113,6 @@ def get_base64_logo():
         with open("assets/logo.png", "rb") as f: return base64.b64encode(f.read()).decode()
     return ""
 
-# ==============================================================================
-# CALCOLI
-# ==============================================================================
-
 def calcola_somatotipo_scientifico(peso, altezza_cm, polso, vita, fianchi, collo, sesso):
     if altezza_cm <= 0: return "N/D", 0, 0
     h_m = altezza_cm / 100.0
@@ -183,10 +172,6 @@ def grafico_trend(df, col_name, colore="#ff0000"):
     fig.add_trace(go.Scatter(x=df['Data'], y=df[col_name], mode='lines+markers', line=dict(color=colore)))
     fig.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=30, b=10))
     return fig
-
-# ==============================================================================
-# AI ENGINE
-# ==============================================================================
 
 def genera_protocollo_petruzzi(dati_input, api_key):
     client = OpenAI(api_key=api_key)
@@ -252,10 +237,6 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     """
     return html
 
-# ==============================================================================
-# APP FLOW
-# ==============================================================================
-
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2554/2554302.png", width=50) 
 user_mode = st.sidebar.selectbox("Accesso", ["Atleta", "Coach Admin"])
 pwd = st.sidebar.text_input("Password", type="password")
@@ -282,7 +263,6 @@ if not is_coach:
             else: st.error("Nessun protocollo trovato.")
     st.stop()
 
-# COACH VIEW
 df_img = ottieni_db_immagini()
 api_key = st.secrets.get("OPENAI_API_KEY", "") or st.sidebar.text_input("API Key", type="password")
 
@@ -328,7 +308,7 @@ if btn_gen:
             if "errore" not in res_ai:
                 res_ai['meta_biometria'] = {'somato': somato, 'bf': bf, 'ffmi': ffmi, 'whr': whr}
                 st.session_state['last_ai'] = res_ai; st.session_state['last_nome'] = nome; st.session_state['last_email'] = email
-                st.session_state['last_bf'] = bf; st.session_state['last_somato'] = somato; st.session_state['last_ffmi'] = ffmi; st.session_state['last_whr'] = whr; st.session_state['last_limiti'] = limitazioni
+                st.session_state['last_bf'] = bf; st.session_state['last_somato'] = somato; st.session_state['last_ffmi'] = ffmi; st.session_state['last_whr'] = whr; st.session_state['last_limitazioni'] = limitazioni
                 
                 st.markdown(f"## PROTOCOLLO: {res_ai.get('mesociclo','').upper()}")
                 c1, c2, c3 = st.columns(3)
@@ -351,7 +331,7 @@ if 'last_ai' in st.session_state:
         g = grafico_trend(df_hist, "Peso"); 
         if g: grafici_html.append(pio.to_html(g, full_html=False))
     
-    html = crea_report_totale(st.session_state.get('last_nome', 'Atleta'), st.session_state.get('last_ai', {}), grafici_html, df_img, st.session_state.get('last_limiti', ''), st.session_state.get('last_bf', 0), st.session_state.get('last_somato', 'N/D'), st.session_state.get('last_whr', 0), st.session_state.get('last_ffmi', 0), eta)
+    html = crea_report_totale(st.session_state.get('last_nome', 'Atleta'), st.session_state.get('last_ai', {}), grafici_html, df_img, st.session_state.get('last_limitazioni', ''), st.session_state.get('last_bf', 0), st.session_state.get('last_somato', 'N/D'), st.session_state.get('last_whr', 0), st.session_state.get('last_ffmi', 0), eta)
     
     def azione_invio():
         if aggiorna_db_glide(st.session_state.get('last_nome'), st.session_state.get('last_email'), st.session_state.get('last_ai'), "", st.session_state.get('last_ai', {}).get('warning_tecnico','')): 
