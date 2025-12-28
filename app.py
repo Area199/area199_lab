@@ -15,7 +15,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 # ==============================================================================
-# 1. CONFIGURAZIONE
+# CONFIGURAZIONE
 # ==============================================================================
 st.set_page_config(page_title="AREA 199 | Dr. Petruzzi", layout="wide", page_icon="💀")
 
@@ -41,7 +41,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. FUNZIONI DATABASE CLOUD & UTILS
+# DATABASE CLOUD
 # ==============================================================================
 
 def get_gsheet_client():
@@ -50,7 +50,6 @@ def get_gsheet_client():
     return gspread.authorize(creds)
 
 def leggi_storico(nome):
-    # Legge lo storico dal foglio Google Storico_Misure
     try:
         client = get_gsheet_client()
         sheet = client.open("AREA199_DB").worksheet("Storico_Misure")
@@ -79,14 +78,8 @@ def salva_dati_check(nome, dati):
         ]
         sheet.append_row(row)
         return True
-    except gspread.exceptions.WorksheetNotFound:
-        st.error("❌ ERRORE: Manca il foglio 'Storico_Misure' su Google Sheets.")
-        return False
-    except gspread.exceptions.APIError:
-        st.error("❌ ERRORE: Problema permessi API Google.")
-        return False
     except Exception as e:
-        st.error(f"❌ ERRORE GENERICO: {str(e)}")
+        st.error(f"ERRORE: {str(e)}")
         return False
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
@@ -95,9 +88,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         row = [datetime.now().strftime("%Y-%m-%d"), email, nome, dati_ai.get('mesociclo', 'N/D'), dati_ai.get('cardio_protocol', ''), note_coach, dati_ai.get('analisi_clinica', ''), json.dumps(dati_ai)]
         client.open("AREA199_DB").sheet1.append_row(row)
         return True
-    except Exception as e:
-        st.error(f"ERRORE DB: {e}")
-        return False
+    except: return False
 
 def recupera_protocollo_da_db(email_target):
     if not email_target: return None, None
@@ -130,32 +121,22 @@ def get_base64_logo():
     return ""
 
 # ==============================================================================
-# 3. CALCOLI & LOGICA
+# CALCOLI
 # ==============================================================================
-
-def calcola_navy_bf_raw(sesso, altezza, collo, vita, fianchi):
-    try:
-        if altezza <= 0 or collo <= 0 or vita <= 0: return 20.0
-        if sesso == "Uomo":
-            denom = vita - collo
-            return round(86.010 * math.log10(denom) - 70.041 * math.log10(altezza) + 36.76, 1) if denom > 0 else 20.0
-        else:
-            denom = vita + fianchi - collo
-            return round(163.205 * math.log10(denom) - 97.684 * math.log10(altezza) - 78.387, 1) if denom > 0 else 25.0
-    except: return 20.0
-
-def calcola_whr(vita, fianchi): return round(vita/fianchi, 2) if fianchi > 0 else 0
 
 def calcola_somatotipo_scientifico(peso, altezza_cm, polso, vita, fianchi, collo, sesso):
     if altezza_cm <= 0: return "N/D", 0, 0
     h_m = altezza_cm / 100.0
-    bf = calcola_navy_bf_raw(sesso, altezza_cm, collo, vita, fianchi)
+    if sesso == "Uomo":
+        denom = vita - collo
+        bf = round(86.010 * math.log10(denom) - 70.041 * math.log10(altezza_cm) + 36.76, 1) if denom > 0 else 20
+    else:
+        denom = vita + fianchi - collo
+        bf = round(163.205 * math.log10(denom) - 97.684 * math.log10(altezza_cm) - 78.387, 1) if denom > 0 else 25
     lbm = peso * (1 - (bf / 100))
     ffmi = round(lbm / (h_m ** 2), 1)
     
     rpi = altezza_cm / (peso ** (1/3))
-    whr = vita / fianchi if fianchi > 0 else 0.85
-    
     score_ecto = 3 if rpi >= 44 else (2 if rpi >= 42 else 0)
     score_meso = 3 if ffmi >= 22 else (2 if ffmi >= 20 else 0)
     score_endo = 3 if bf > 25 else (2 if bf > 18 else 0)
@@ -166,8 +147,9 @@ def calcola_somatotipo_scientifico(peso, altezza_cm, polso, vita, fianchi, collo
     elif score_meso >= 3: somato = "MESOMORFO (Strutturale)"
     elif score_ecto >= 3: somato = "ECTOMORFO (Longilineo)"
     else: somato = "NORMO TIPO"
-    
     return somato, ffmi, bf
+
+def calcola_whr(vita, fianchi): return round(vita/fianchi, 2) if fianchi > 0 else 0
 
 def stima_durata_sessione(lista):
     sec = 0
@@ -202,17 +184,8 @@ def grafico_trend(df, col_name, colore="#ff0000"):
     fig.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=30, b=10))
     return fig
 
-def grafico_simmetria(df, parte_corpo):
-    col_dx, col_sx = f"{parte_corpo} Dx", f"{parte_corpo} Sx"
-    if col_dx not in df.columns or col_sx not in df.columns: return None
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df['Data'], y=df[col_dx], mode='lines+markers', name='Destra', line=dict(color='#ff0000')))
-    fig.add_trace(go.Scatter(x=df['Data'], y=df[col_sx], mode='lines+markers', name='Sinistra', line=dict(color='#ffffff', dash='dot')))
-    fig.update_layout(title=f"SIMMETRIA {parte_corpo.upper()}", template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=20, r=20, t=40, b=20), height=300)
-    return fig
-
 # ==============================================================================
-# 4. AI & REPORT
+# AI ENGINE
 # ==============================================================================
 
 def genera_protocollo_petruzzi(dati_input, api_key):
@@ -280,7 +253,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     return html
 
 # ==============================================================================
-# 5. APP FLOW
+# APP FLOW
 # ==============================================================================
 
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2554/2554302.png", width=50) 
@@ -293,7 +266,6 @@ else:
     if pwd: st.sidebar.error("❌ Errore.")
     st.warning("⚠️ Accesso Riservato."); st.stop()
 
-# --- ATLETA ---
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
     email_login = st.text_input("Email Atleta").strip()
@@ -310,7 +282,7 @@ if not is_coach:
             else: st.error("Nessun protocollo trovato.")
     st.stop()
 
-# --- COACH ---
+# COACH VIEW
 df_img = ottieni_db_immagini()
 api_key = st.secrets.get("OPENAI_API_KEY", "") or st.sidebar.text_input("API Key", type="password")
 
@@ -335,9 +307,9 @@ with st.sidebar:
     
     misure = {"Peso":peso, "Altezza":alt, "Collo":collo, "Vita":vita, "Fianchi":fianchi, "Polso":polso, "Caviglia":cav, "Torace":tor, "Braccio Dx":bdx, "Braccio Sx":bsx, "Coscia Dx":cdx, "Coscia Sx":csx}
     
-    if st.button("💾 ARCHIVIA CHECK (CLOUD)"):
+    if st.button("💾 ARCHIVIA CHECK"):
         if nome:
-            if salva_dati_check(nome, misure): st.success("Salvato su Google Sheets")
+            if salva_dati_check(nome, misure): st.success("Salvato su Cloud")
         else: st.error("Nome mancante")
     
     st.markdown("---")
@@ -356,7 +328,7 @@ if btn_gen:
             if "errore" not in res_ai:
                 res_ai['meta_biometria'] = {'somato': somato, 'bf': bf, 'ffmi': ffmi, 'whr': whr}
                 st.session_state['last_ai'] = res_ai; st.session_state['last_nome'] = nome; st.session_state['last_email'] = email
-                st.session_state['last_bf'] = bf; st.session_state['last_somato'] = somato; st.session_state['last_ffmi'] = ffmi; st.session_state['last_whr'] = whr; st.session_state['last_limitazioni'] = limitazioni
+                st.session_state['last_bf'] = bf; st.session_state['last_somato'] = somato; st.session_state['last_ffmi'] = ffmi; st.session_state['last_whr'] = whr; st.session_state['last_limiti'] = limitazioni
                 
                 st.markdown(f"## PROTOCOLLO: {res_ai.get('mesociclo','').upper()}")
                 c1, c2, c3 = st.columns(3)
@@ -378,10 +350,8 @@ if 'last_ai' in st.session_state:
     if df_hist is not None:
         g = grafico_trend(df_hist, "Peso"); 
         if g: grafici_html.append(pio.to_html(g, full_html=False))
-        g2 = grafico_simmetria(df_hist, "Braccio")
-        if g2: grafici_html.append(pio.to_html(g2, full_html=False))
     
-    html = crea_report_totale(st.session_state.get('last_nome', 'Atleta'), st.session_state.get('last_ai', {}), grafici_html, df_img, st.session_state.get('last_limitazioni', ''), st.session_state.get('last_bf', 0), st.session_state.get('last_somato', 'N/D'), st.session_state.get('last_whr', 0), st.session_state.get('last_ffmi', 0), eta)
+    html = crea_report_totale(st.session_state.get('last_nome', 'Atleta'), st.session_state.get('last_ai', {}), grafici_html, df_img, st.session_state.get('last_limiti', ''), st.session_state.get('last_bf', 0), st.session_state.get('last_somato', 'N/D'), st.session_state.get('last_whr', 0), st.session_state.get('last_ffmi', 0), eta)
     
     def azione_invio():
         if aggiorna_db_glide(st.session_state.get('last_nome'), st.session_state.get('last_email'), st.session_state.get('last_ai'), "", st.session_state.get('last_ai', {}).get('warning_tecnico','')): 
