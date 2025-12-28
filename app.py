@@ -15,15 +15,14 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 # ==============================================================================
-# CONFIGURAZIONE & CSS
+# 1. CONFIGURAZIONE
 # ==============================================================================
 st.set_page_config(page_title="AREA 199 | Dr. Petruzzi", layout="wide", page_icon="💀")
 
 st.markdown("""
 <style>
     [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
-        background-color: #080808 !important;
-        color: #e0e0e0 !important;
+        background-color: #080808 !important; color: #e0e0e0 !important;
     }
     h1, h2, h3, h4 { color: #ff0000 !important; font-family: 'Arial Black', sans-serif; text-transform: uppercase; }
     div[data-testid="stWidgetLabel"] p, label { color: #f0f0f0 !important; font-size: 14px !important; font-weight: 600 !important; text-transform: uppercase !important; }
@@ -33,6 +32,7 @@ st.markdown("""
     .stButton>button { 
         background-color: #990000 !important; color: white !important; border: 1px solid #ff0000 !important; font-weight: bold; text-transform: uppercase;
     }
+    .stButton>button:hover { background-color: #ff0000 !important; }
     .warning-box { border: 1px solid #ff0000; background-color: #330000; padding: 15px; color: #ffcccc; margin-bottom: 20px; font-weight: bold; text-align:center; }
     .analysis-preview { background-color: #1a1a1a; border-left: 4px solid #ff0000; padding: 15px; margin-bottom: 10px; }
     .command-preview { background-color: #1a1a1a; border-left: 4px solid #ffff00; padding: 15px; margin-bottom: 10px; color: #ffffcc; }
@@ -41,7 +41,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# FUNZIONI DATABASE CLOUD
+# 2. FUNZIONI DATABASE CLOUD
 # ==============================================================================
 
 def get_gsheet_client():
@@ -67,7 +67,8 @@ def leggi_storico(nome):
 def salva_dati_check(nome, dati):
     try:
         client = get_gsheet_client()
-        sheet = client.open("AREA199_DB").worksheet("Storico_Misure")
+        sh = client.open("AREA199_DB")
+        sheet = sh.worksheet("Storico_Misure")
         row = [
             dati.get("Data", datetime.now().strftime("%Y-%m-%d")), nome,
             dati.get("Peso", 0), dati.get("Collo", 0), dati.get("Vita", 0),
@@ -77,8 +78,14 @@ def salva_dati_check(nome, dati):
         ]
         sheet.append_row(row)
         return True
+    except gspread.exceptions.WorksheetNotFound:
+        st.error("❌ ERRORE: Manca il foglio 'Storico_Misure' su Google Sheets.")
+        return False
+    except gspread.exceptions.APIError:
+        st.error("❌ ERRORE: Problema permessi API Google.")
+        return False
     except Exception as e:
-        st.error(f"❌ ERRORE CLOUD: {e}")
+        st.error(f"❌ ERRORE GENERICO: {str(e)}")
         return False
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
@@ -122,29 +129,23 @@ def get_base64_logo():
     return ""
 
 # ==============================================================================
-# CALCOLI BIOMETRICI
+# 3. CALCOLI & LOGICA
 # ==============================================================================
 
 def calcola_somatotipo_scientifico(peso, altezza_cm, polso, vita, fianchi, collo, sesso):
     if altezza_cm <= 0: return "N/D", 0, 0
     h_m = altezza_cm / 100.0
-    
-    # BF Navy
     if sesso == "Uomo":
         denom = vita - collo
         bf = round(86.010 * math.log10(denom) - 70.041 * math.log10(altezza_cm) + 36.76, 1) if denom > 0 else 20
     else:
         denom = vita + fianchi - collo
         bf = round(163.205 * math.log10(denom) - 97.684 * math.log10(altezza_cm) - 78.387, 1) if denom > 0 else 25
-    
     lbm = peso * (1 - (bf / 100))
     ffmi = round(lbm / (h_m ** 2), 1)
     
-    # Logica Petruzzi Completa
     rpi = altezza_cm / (peso ** (1/3))
-    whr = vita / fianchi if fianchi > 0 else 0.85
     
-    # Calcolo Dominanza
     score_ecto = 3 if rpi >= 44 else (2 if rpi >= 42 else 0)
     score_meso = 3 if ffmi >= 22 else (2 if ffmi >= 20 else 0)
     score_endo = 3 if bf > 25 else (2 if bf > 18 else 0)
@@ -172,7 +173,6 @@ def trova_img(nome, df):
     if df is None: return None, None
     search = nome.lower().split('(')[0].strip()
     if any(k in search for k in ["cardio", "run", "bike"]): return "https://cdn-icons-png.flaticon.com/512/2964/2964514.png", None
-    
     best, score = None, 0
     target_set = set(search.split())
     for _, row in df.iterrows():
@@ -188,26 +188,20 @@ def grafico_trend(df, col_name, colore="#ff0000"):
     fig.add_trace(go.Scatter(x=df['Data'], y=df[col_name], mode='lines+markers', line=dict(color=colore)))
     fig.update_layout(template="plotly_dark", height=300, margin=dict(l=10, r=10, t=30, b=10))
     return fig
+
 # ==============================================================================
-# AI ENGINE & REPORT
+# 4. AI & REPORT (Versione Completa Petruzzi)
 # ==============================================================================
 
 def genera_protocollo_petruzzi(dati_input, api_key):
     client = OpenAI(api_key=api_key)
     st.toast("⚙️ Analisi Petruzzi...", icon="💀")
     
-    # QUESTO È IL PROMPT COMPLETO CHE VOLEVI
+    # PROMPT COMPLETO E CATTIVO
     prompt = f"""
     SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
     NON SEI UN ASSISTENTE, SEI UN MENTORE TECNICO E SEVERO.
-    
-    *** REGOLE DI COMUNICAZIONE ***
-    1. RIVOLGITI ALL'ATLETA DIRETTAMENTE COL "TU". (Es: "Devi spingere").
-    2. VIETATO PARLARE IN TERZA PERSONA.
-    3. TONO: DARK SCIENCE, FREDDO, CHIRURGICO.
-    
-    *** OBIETTIVO ***
-    Creare una scheda massacrante e precisa. TEMPO: {dati_input['durata_target']} MIN.
+    RIVOLGITI ALL'ATLETA COL "TU". VIETATA TERZA PERSONA. TONO: DARK SCIENCE.
     
     *** DATI ATLETA ***
     - BIOMETRIA: {dati_input['meta']}
@@ -287,7 +281,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     return html
 
 # ==============================================================================
-# INTERFACCIA PRINCIPALE
+# 5. APP FLOW
 # ==============================================================================
 
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2554/2554302.png", width=50) 
@@ -363,7 +357,7 @@ if btn_gen:
             if "errore" not in res_ai:
                 res_ai['meta_biometria'] = {'somato': somato, 'bf': bf, 'ffmi': ffmi, 'whr': whr}
                 st.session_state['last_ai'] = res_ai; st.session_state['last_nome'] = nome; st.session_state['last_email'] = email
-                st.session_state['last_bf'] = bf; st.session_state['last_somato'] = somato; st.session_state['last_ffmi'] = ffmi; st.session_state['last_whr'] = whr; st.session_state['last_limiti'] = limitazioni
+                st.session_state['last_bf'] = bf; st.session_state['last_somato'] = somato; st.session_state['last_ffmi'] = ffmi; st.session_state['last_whr'] = whr; st.session_state['last_limitazioni'] = limitazioni
                 
                 st.markdown(f"## PROTOCOLLO: {res_ai.get('mesociclo','').upper()}")
                 c1, c2, c3 = st.columns(3)
@@ -381,15 +375,27 @@ if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT & SYNC")
     grafici_html = []
-    df_hist = leggi_storico(st.session_state['last_nome'])
+    df_hist = leggi_storico(st.session_state.get('last_nome', ''))
     if df_hist is not None:
         g = grafico_trend(df_hist, "Peso"); 
         if g: grafici_html.append(pio.to_html(g, full_html=False))
     
-    html = crea_report_totale(st.session_state['last_nome'], st.session_state['last_ai'], grafici_html, df_img, st.session_state['last_limiti'], st.session_state['last_bf'], st.session_state['last_somato'], st.session_state['last_whr'], st.session_state['last_ffmi'], eta)
+    html = crea_report_totale(
+        st.session_state.get('last_nome', 'Atleta'), 
+        st.session_state.get('last_ai', {}), 
+        grafici_html, 
+        df_img, 
+        st.session_state.get('last_limitazioni', ''),
+        st.session_state.get('last_bf', 0), 
+        st.session_state.get('last_somato', 'N/D'), 
+        st.session_state.get('last_whr', 0), 
+        st.session_state.get('last_ffmi', 0), 
+        eta
+    )
     
     def azione_invio():
-        if aggiorna_db_glide(st.session_state['last_nome'], st.session_state['last_email'], st.session_state['last_ai'], "", st.session_state['last_ai'].get('warning_tecnico','')): st.success("✅ SALVATO SU DB")
+        if aggiorna_db_glide(st.session_state.get('last_nome'), st.session_state.get('last_email'), st.session_state.get('last_ai'), "", st.session_state.get('last_ai', {}).get('warning_tecnico','')): 
+            st.success("✅ SALVATO SU DB")
         else: st.error("Errore DB")
         
-    st.download_button("📥 SCARICA E SALVA SU DB", html, f"AREA199_{st.session_state['last_nome']}.html", "text/html", on_click=azione_invio)
+    st.download_button("📥 SCARICA E SALVA SU DB", html, f"AREA199_{st.session_state.get('last_nome','scheda')}.html", "text/html", on_click=azione_invio)
