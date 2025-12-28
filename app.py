@@ -923,6 +923,10 @@ if btn_gen:
 # 6. EXPORT & SYNC (REVISIONE TECNICA)
 # ==============================================================================
 
+# ==============================================================================
+# 6. EXPORT & SYNC (CORREZIONE INDENTAZIONE)
+# ==============================================================================
+
 if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT & SYNC")
@@ -935,19 +939,16 @@ if 'last_ai' in st.session_state:
         try:
             g_br = grafico_simmetria(df_hist, "Braccio")
             if g_br: grafici_html.append(pio.to_html(g_br, full_html=False, include_plotlyjs='cdn'))
-            
             g_lg = grafico_simmetria(df_hist, "Coscia")
             if g_lg: grafici_html.append(pio.to_html(g_lg, full_html=False, include_plotlyjs='cdn'))
-            
             g_peso = grafico_trend(df_hist, "Peso", colore="#ff0000") 
             if g_peso: grafici_html.append(pio.to_html(g_peso, full_html=False, include_plotlyjs='cdn'))
-            
             g_vita = grafico_trend(df_hist, "Vita", colore="#ffff00") 
             if g_vita: grafici_html.append(pio.to_html(g_vita, full_html=False, include_plotlyjs='cdn'))
         except Exception as e:
-            st.warning(f"Errore rendering grafici: {e}")
+            st.error(f"Errore generazione grafici: {e}")
 
-    # 2. GENERAZIONE REPORT HTML (Chiamata corretta)
+    # 2. GENERAZIONE REPORT HTML
     html_report = crea_report_totale(
         nome=st.session_state['last_nome'],
         dati_ai=st.session_state['last_ai'],
@@ -960,19 +961,17 @@ if 'last_ai' in st.session_state:
         ffmi=st.session_state.get('last_ffmi', 0)
     )
 
-    # 3. LOGICA DI CALLBACK PER L'INVIO CLOUD
+    # 3. DEFINIZIONE CALLBACK AZIONE CLOUD
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
         nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
-            # FASE 1: UPLOAD SU GOOGLE DRIVE
             st.toast("📤 Caricamento Report su Google Drive...", icon="☁️")
             link_generato = upload_to_drive(html_report, f"AREA199_{nome_atleta}.html")
             
             if link_generato:
-                # FASE 2: INVIO A GOOGLE SHEETS
                 ok = aggiorna_db_glide(
                     nome_atleta, 
                     mail_sicura, 
@@ -985,11 +984,11 @@ if 'last_ai' in st.session_state:
                 else:
                     st.error("⚠️ Errore durante la scrittura su Google Sheets.")
             else:
-                st.error("⚠️ Fallimento Upload Drive. Verifica permessi della cartella.")
+                st.error("⚠️ Fallimento Upload Drive.")
         else:
-            st.toast("⚠️ Email o dati mancanti!", icon="📧")
+            st.toast("⚠️ Email non trovata!", icon="📧")
 
-    # 4. DOWNLOAD BUTTON
+    # 4. BOTTONE DI DOWNLOAD E INVIO
     st.download_button(
         label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
         data=html_report, 
