@@ -321,7 +321,7 @@ def grafico_simmetria(df, parte_corpo):
     return fig
 
 # ==============================================================================
-# AI GENERATOR
+# 4. INTELLIGENZA ARTIFICIALE (CORE ENGINE)
 # ==============================================================================
 
 def genera_protocollo_petruzzi(dati_input, api_key):
@@ -337,17 +337,29 @@ def genera_protocollo_petruzzi(dati_input, api_key):
         dati_input['sesso']
     )
     
-    # 2. VOLUME TARGET
+    # 2. ANALISI TREND STORICO (IL FEEDBACK LOOP)
+    trend_analysis = "Nessun dato storico (Primo Check)."
+    try:
+        df_hist = leggi_storico(dati_input['nome'])
+        if df_hist is not None and not df_hist.empty:
+            df_hist = df_hist.sort_values(by="Data", ascending=False)
+            if len(df_hist) >= 1:
+                last_peso = df_hist.iloc[0]['Peso']
+                delta_peso = round(dati_input['misure']['Peso'] - last_peso, 1)
+                trend_analysis = f"Variazione Peso rispetto ultimo check: {delta_peso}kg. (Se negativo=Dimagrimento, Positivo=Massa/Stallo)."
+    except: pass
+
+    # 3. VOLUME TARGET TASSATIVO
     minuti_totali = dati_input['durata_target']
     target_ex = int(minuti_totali / 8.5)
     if minuti_totali > 45 and target_ex < 6: target_ex = 6
 
-    # 4. SETUP GIORNI & SPLIT
+    # 4. SETUP GIORNI
     giorni_lista = dati_input['giorni']
     if not giorni_lista: giorni_lista = ["Lunedì", "Mercoledì", "Venerdì"]
     giorni_str = ", ".join(giorni_lista).upper()
     
-    # 5. PROMPT
+    # 5. PROMPT UNIFICATO (INTEGRATO CON Z1/Z2 E MATRICE)
     system_prompt = f"""
     SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
     
@@ -358,22 +370,41 @@ def genera_protocollo_petruzzi(dati_input, api_key):
     *** ORDINE DI VOLUME (TASSATIVO) ***
     Ho calcolato matematicamente che per coprire {minuti_totali} minuti servono:
     ---> ESATTAMENTE {target_ex} ESERCIZI PER GIORNO. <---
-    
     Non farne di meno. Se finisci i fondamentali, inserisci complementari, braccia, polpacci e addome.
     IL NUMERO DI ESERCIZI NEL JSON DEVE ESSERE {target_ex}.
     
-    *** DATI ATLETA ***
+    *** DATI ATLETA (STATO ATTUALE) ***
     - MORFOLOGIA: {somato_str} (FFMI: {ffmi_val})
-    - LIMITAZIONI: {dati_input['limitazioni'] if dati_input['limitazioni'] else "NESSUNO"}
+    - BF NAVY: {bf_val}%
     - OBIETTIVO: {dati_input['goal']}
-    
-    *** LOGICA DI SPLIT (STRUTTURA) ***
-    - 3 GIORNI -> PUSH / PULL / LEGS (Spinta/Trazione/Gambe).
-    - 4 GIORNI -> UPPER / LOWER / UPPER / LOWER.
-    - 5+ GIORNI -> PPL + Richiamo Carenti.
-    - Se Multifrequenza -> Full Body o Upper/Lower ibrido.
+    - LIMITAZIONI: {dati_input['limitazioni'] if dati_input['limitazioni'] else "NESSUNO"}
 
-    *** ISTRUZIONI TATTICHE ***
+    *** ANALISI PROGRESSI (TREND) ***
+    {trend_analysis}
+    (USA QUESTO DATO: Se l'obiettivo è Massa e il peso scende -> Aumenta Volume/Carichi. Se Cut e il peso stalla -> Aumenta Densità/Cardio).
+
+    *** LOGICA TECNICA AREA 199 (MANDATORIA) ***
+
+    1. MATRICE DI DISTRIBUZIONE:
+    - Se Giorni = 3 e Multifrequenza = NO -> Genera PUSH / PULL / LEGS.
+    - Se Giorni = 3 e Multifrequenza = SI -> Genera FULL BODY / UPPER / LOWER.
+    - Se Giorni = 4 -> Genera UPPER / LOWER / UPPER / LOWER.
+    - Se Giorni >= 5 -> Genera SPLIT PER DISTRETTI (PPL+Upper/Lower o Bro-Split Scientifica).
+
+    2. MODULAZIONE MORFOLOGICA (FFMI & RPI DRIVEN):
+    - ECTOMORFO (RPI Alto, Struttura esile): Basso volume sistemico, recuperi lunghi (3-4 min sui big), focus tensione meccanica. Evita tecniche ad alto impatto metabolico.
+    - MESOMORFO (FFMI Alto): Alto volume tollerabile, inserimento tecniche di intensità.
+    - ENDOMORFO (BF Alta / WHR Alto): Alta densità, recuperi incompleti (60-90s), focus stress metabolico e consumo ossigeno post-ex (EPOC).
+
+    3. REGOLE ESERCIZI:
+    - Inizia sempre con un Fondamentale (Power) o una variante biomeccanica superiore.
+    - Usa nomi inglesi ma spiega i dettagli tecnici in ITALIANO.
+    - Se ci sono limitazioni fisiche indicate, evita tassativamente esercizi che stressano quella zona.
+
+    4. CARDIO & METABOLIC:
+    - Ogni riferimento al cardio deve essere in %FTP E IN ZONE Z1/Z2 (Es. 20 min Z2 @ 65% FTP).
+
+    *** ISTRUZIONI TATTICHE EXTRA ***
     "{dati_input['custom_instructions']}"
     (Se richiesto Cardio, inseriscilo come ULTIMO esercizio della lista).
 
@@ -381,7 +412,104 @@ def genera_protocollo_petruzzi(dati_input, api_key):
     OUTPUT JSON
     ---------------------------------------------------------------------
     
-    REGOLE TECNICHE:
+    REGOLE TECNICHE JSON:
+    1. TUT: OBBLIGATORIO 4 CIFRE (Es. "3-0-1-0").
+    2. NOMI ESERCIZI: SOLO INGLESE TECNICO (Es. "Barbell Squat").
+    3. DESCRIZIONI: 
+       - Tecniche, biomeccaniche (30-40 parole).
+       - Scritte su UNA RIGA (usa il punto per separare).
+       - USA SOLO APOSTROFI ('). VIETATE LE VIRGOLETTE DOPPIE (").
+    
+    FORMATO JSON:
+    {{
+        "mesociclo": "NOME FASE (Es. Mechanical Tension)",
+        "analisi_clinica": "COMMENTO SULL'ANDAMENTO E STRATEGIA ADOTTATA...",
+        "warning_tecnico": "Comando secco...",
+        "cardio_protocol": "Target...",
+        "tabella": {{
+            "{giorni_lista[0].upper()}": [ 
+                {{ "Esercizio": "Barbell Squat", "Target": "Quad", "Sets": "4", "Reps": "6", "Recupero": "120s", "TUT": "3-1-1-0", "Esecuzione": "...", "Note": "..." }}
+            ]
+        }}
+    }}
+    """
+    
+    try:
+        st.toast(f"📡 2/3: Generazione {target_ex} Esercizi...", icon="🧠")
+        res = client.chat.completions.create(
+            model="gpt-4o", 
+            response_format={"type": "json_object"}, 
+            messages=[
+                {"role": "system", "content": system_prompt}, 
+                {"role": "user", "content": f"Genera la scheda per {giorni_str}. RICORDA: {target_ex} ESERCIZI PER SEDUTA."}
+            ],
+            max_tokens=4096, 
+            temperature=0.7 
+        )
+        content = res.choices[0].message.content
+        content = content.replace("```json", "").replace("```", "").strip()
+        content = content.replace('\n', ' ').replace('\r', '') 
+        content = re.sub(r',(\s*[}\]])', r'\1', content)
+        st.toast("✅ 3/3: Protocollo Pronto!", icon="🚀")
+        return json.loads(content, strict=False)
+    except json.JSONDecodeError as e: 
+        st.error(f"ERRORE FORMATTAZIONE AI.")
+        return {"errore": f"ERRORE JSON: {str(e)}"}
+    except Exception as e: return {"errore": f"ERRORE SISTEMA: {str(e)}"}
+
+# ==============================================================================
+# AI GENERATOR
+# ==============================================================================
+
+# 5. PROMPT UNIFICATO (CORRETTO CON TUTTE LE ISTRUZIONI COACH)
+    system_prompt = f"""
+    SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
+    
+    *** OBIETTIVO ***
+    Creare una scheda massacrante e precisa.
+    TEMPO TOTALE: {minuti_totali} MINUTI.
+    
+    *** ORDINE DI VOLUME (TASSATIVO) ***
+    Ho calcolato matematicamente che per coprire {minuti_totali} minuti servono:
+    ---> ESATTAMENTE {target_ex} ESERCIZI PER GIORNO. <---
+    Non farne di meno. Se finisci i fondamentali, inserisci complementari, braccia, polpacci e addome.
+    IL NUMERO DI ESERCIZI NEL JSON DEVE ESSERE {target_ex}.
+    
+    *** DATI ATLETA ***
+    - MORFOLOGIA: {somato_str} (FFMI: {ffmi_val})
+    - LIMITAZIONI: {dati_input['limitazioni'] if dati_input['limitazioni'] else "NESSUNO"}
+    - OBIETTIVO: {dati_input['goal']}
+
+    *** LOGICA TECNICA AREA 199 (MANDATORIA) ***
+
+    1. MATRICE DI DISTRIBUZIONE:
+    - Se Giorni = 3 e Multifrequenza = NO -> Genera PUSH / PULL / LEGS.
+    - Se Giorni = 3 e Multifrequenza = SI -> Genera FULL BODY / UPPER / LOWER.
+    - Se Giorni = 4 -> Genera UPPER / LOWER / UPPER / LOWER.
+    - Se Giorni >= 5 -> Genera SPLIT PER DISTRETTI (PPL+Upper/Lower o Bro-Split Scientifica).
+
+    2. MODULAZIONE MORFOLOGICA (FFMI & RPI DRIVEN):
+    - ECTOMORFO (RPI Alto, Struttura esile): Basso volume sistemico, recuperi lunghi (3-4 min sui big), focus tensione meccanica. Evita tecniche ad alto impatto metabolico.
+    - MESOMORFO (FFMI Alto): Alto volume tollerabile, inserimento tecniche di intensità.
+    - ENDOMORFO (BF Alta / WHR Alto): Alta densità, recuperi incompleti (60-90s), focus stress metabolico e consumo ossigeno post-ex (EPOC).
+
+    3. REGOLE ESERCIZI:
+    - Inizia sempre con un Fondamentale (Power) o una variante biomeccanica superiore.
+    - Usa nomi inglesi ma spiega i dettagli tecnici in ITALIANO.
+    - Se ci sono limitazioni fisiche indicate, evita tassativamente esercizi che stressano quella zona.
+
+    4. CARDIO & METABOLIC:
+    - Ogni riferimento al cardio deve essere in %FTP E IN ZONE Z1/Z2.
+
+    *** ISTRUZIONI TATTICHE EXTRA ***
+    "{dati_input['custom_instructions']}"
+    (Se richiesto Cardio, inseriscilo come ULTIMO esercizio della lista).
+
+    ---------------------------------------------------------------------
+    OUTPUT JSON
+    ---------------------------------------------------------------------
+    
+    REGOLE TECNICHE JSON:
     1. TUT: OBBLIGATORIO 4 CIFRE (Es. "3-0-1-0").
     2. NOMI ESERCIZI: SOLO INGLESE TECNICO (Es. "Barbell Squat").
     3. DESCRIZIONI: 
