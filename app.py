@@ -231,12 +231,13 @@ st.sidebar.title("🔐 AREA 199 ACCESS")
 pwd = st.sidebar.text_input("Password", type="password")
 
 if pwd == "PETRUZZI199":
-    # --- COACH PANEL ---
-df_i = ottieni_db_immagini()
-api = st.secrets["OPENAI_API_KEY"]
-
-with st.sidebar:
-    n = st.text_input("Atleta")
+    # --- COACH PANEL --- (Tutte queste righe devono essere rientrate)
+    df_i = ottieni_db_immagini()
+    api = st.secrets["OPENAI_API_KEY"]
+    
+    with st.sidebar:
+        n = st.text_input("Atleta")
+        # ... resto del codice
     
     # --- INIZIO NUOVA LOGICA GRAFICO ---
     if n:
