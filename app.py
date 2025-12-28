@@ -204,12 +204,10 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # ==============================================================================
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
-    """Salva i dati della scheda direttamente nel foglio (Colonna H)."""
-    # Trasformiamo la scheda in testo per salvarla nel db
+    """Sincronizzazione Serverless con Scopes Espansi."""
     import json
     scheda_testo = json.dumps(dati_ai)
     
-    # La colonna H (ultimo elemento) ora contiene i DATI, non il LINK
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -222,7 +220,13 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     ]
     
     try:
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        # --- CORREZIONE QUI SOTTO: AGGIUNTO LO SCOPE DRIVE ---
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        # -----------------------------------------------------
+        
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         client = gspread.authorize(creds)
