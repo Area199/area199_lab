@@ -704,46 +704,57 @@ else:
 # ==============================================================================
 # INTERFACCIA ATLETA (CLIENT VIEW)
 # ==============================================================================
+# ==============================================================================
+# INTERFACCIA ATLETA (FIX VISUALIZZAZIONE)
+# ==============================================================================
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
     email_login = st.text_input("Email Atleta").strip()
     
     if email_login:
-        with st.spinner("Lettura Database Area 199..."):
-            dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
+        # Recupero Dati
+        dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
+        
+        if dati_row is not None:
+            # Se arriviamo qui, i dati ci sono (formato JSON corretto)
+            st.success(f"Bentornato/a, {nome_atleta}.")
             
-            if dati_row is not None:
-                st.success(f"Bentornato/a, {nome_atleta}.")
-                
-                # Rigenerazione DB Immagini
+            try:
+                # Rigenerazione DB Immagini (Gestione errore se fallisce scaricamento)
                 df_img_regen = ottieni_db_immagini()
                 
                 # Generazione HTML
-                # Passiamo parametri "dummy" ("N/D") perché l'atleta non inserisce misure al login.
-                # La funzione crea_report_totale leggerà i dati veri dal JSON salvato.
                 html_rebuilt = crea_report_totale(
                     nome=nome_atleta,
                     dati_ai=dati_row, 
                     grafici_html_list=[], 
                     df_img=df_img_regen,
                     limitazioni="Vedi Note Coach", 
-                    bf="N/D", 
-                    somatotipo="N/D", 
-                    whr="N/D", 
-                    ffmi="N/D",
-                    eta=30 # Fallback per FC Max
+                    bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D",
+                    eta=30 # Default sicurezza
                 )
                 
+                st.markdown("---")
                 st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
+                
+                # PULSANTE DI DOWNLOAD (Chiave unica per evitare conflitti)
                 st.download_button(
-                    label="SCARICA SCHEDA COMPLETA (HTML)",
+                    label="📄 SCARICA SCHEDA COMPLETA (HTML)",
                     data=html_rebuilt,
-                    file_name=f"AREA199_{nome_atleta}.html",
+                    file_name=f"AREA199_{nome_atleta}_{datetime.now().strftime('%d%m')}.html",
                     mime="text/html",
+                    key="download_btn_atleta",
                     type="primary"
                 )
-            else:
-                st.error("❌ Nessun protocollo trovato. Controlla l'email.")
+            
+            except Exception as e:
+                st.error(f"Errore durante la generazione del file: {e}")
+        
+        else:
+            # MESSAGGIO ERRORE SPECIFICO
+            st.warning("⚠️ Nessun protocollo attivo trovato per questa email.")
+            st.info("Possibili cause:\n1. Email errata.\n2. Il Coach non ha ancora salvato la scheda nel nuovo formato.\n3. Il salvataggio precedente non è andato a buon fine.")
+
     st.stop()
 
 # --- COACH VIEW ---
