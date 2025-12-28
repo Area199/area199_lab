@@ -178,49 +178,56 @@ if not access_granted:
 # Se il codice prosegue, l'accesso è autorizzato.
 # Se l'utente è un ATLETA, mostriamo solo i suoi dati e fermiamo l'app.
 # SEZIONE ATLETA (Login via Email)
+# ==============================================================================
+# INTERFACCIA ATLETA (RIGENERAZIONE LIVE)
+# ==============================================================================
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
-    st.markdown("Inserisci la mail registrata per scaricare il protocollo attivo.")
+    st.markdown("Inserisci la mail registrata per scaricare il protocollo.")
     
     email_login = st.text_input("Email Atleta").strip()
     
     if email_login:
-        with st.spinner("Sincronizzazione Cloud in corso..."):
-            # ORA QUESTA FUNZIONE ESISTE E NON DARÀ PIÙ NAME ERROR
-            dati_scheda, nome_atleta = recupera_protocollo_da_db(email_login)
+        with st.spinner("Accesso al Database Area 199..."):
+            # Recuperiamo la riga dal database
+            dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
             
-            if dati_scheda is not None:
-                st.success(f"Bentornato/a, {nome_atleta}. Protocollo Trovato.")
+            if dati_row is not None:
+                st.success(f"Bentornato/a, {nome_atleta}.")
                 
-                # Estrazione Link Drive
-                link = dati_scheda.get('Link_Scheda', '') # Cerca la colonna 'Link_Scheda'
+                # RECUPERO IL "DNA" (JSON) DALLA COLONNA H
+                raw_data = dati_row.get('Link_Scheda', '')
                 
-                # Check se il link è valido (inizia con http)
-                if link and str(link).startswith('http'):
-                    st.markdown(f"""
-                        <br>
-                        <div style="background:#111; border:2px solid #ff0000; padding:30px; border-radius:15px; text-align:center;">
-                            <h2 style="color:#fff; margin:0 0 20px 0;">PROTOCOLLO ATTIVO</h2>
-                            <a href="{link}" target="_blank" style="text-decoration:none;">
-                                <button style="
-                                    background-color: #ff0000; 
-                                    color: white; 
-                                    border: none; 
-                                    padding: 15px 30px; 
-                                    font-size: 20px; 
-                                    font-weight: bold; 
-                                    border-radius: 8px; 
-                                    cursor: pointer;
-                                    text-transform: uppercase;
-                                    box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4);">
-                                    📥 SCARICA SCHEDA
-                                </button>
-                            </a>
-                            <p style="color:#666; margin-top:15px; font-size:12px;">Server: Google Drive Secure Storage</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ Il protocollo è stato generato ma il link non è ancora disponibile. Contatta il Coach.")
+                try:
+                    # Tentiamo di leggere il contenuto come Dati Tecnici
+                    dati_ai_reconstructed = json.loads(raw_data)
+                    
+                    # RIGENERIAMO IL REPORT HTML SUL MOMENTO
+                    # Recuperiamo le immagini per ricostruire la grafica
+                    df_img_regen = ottieni_db_immagini()
+                    
+                    html_rebuilt = crea_report_totale(
+                        nome=nome_atleta,
+                        dati_ai=dati_ai_reconstructed, # Usiamo i dati estratti dalla cella
+                        grafici_html_list=[], # I grafici storici richiederebbero ricalcolo complesso, li omettiamo per velocità
+                        df_img=df_img_regen,
+                        limitazioni="Vedi Note Coach",
+                        bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D" # Dati non salvati nello storico breve
+                    )
+                    
+                    # MOSTRA IL TASTO DI DOWNLOAD DIRETTO
+                    st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
+                    st.download_button(
+                        label="SCARICA SCHEDA COMPLETA (HTML)",
+                        data=html_rebuilt,
+                        file_name=f"AREA199_{nome_atleta}_Protocol.html",
+                        mime="text/html",
+                        type="primary" # Tasto Rosso
+                    )
+                    
+                except Exception as e:
+                    st.error("Errore nella ricostruzione del protocollo. I dati nel database potrebbero essere corrotti.")
+                    st.warning(f"Codice Errore: {e}")
             else:
                 st.error("❌ Nessun protocollo attivo trovato per questa email.")
     st.stop()
@@ -261,18 +268,12 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # ==============================================================================
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
-    """Sincronizzazione database Google Sheets con Link Attivo."""
+    """Salva il DNA della scheda (JSON) direttamente nel Database."""
     
-    # 1. FIREWALL & FORMULA: Se link_drive è sbagliato (è un dict), lo svuotiamo.
-    if isinstance(link_drive, dict) or isinstance(link_drive, list):
-        valore_link = ""
-    elif link_drive and str(link_drive).startswith("http"):
-        # Crea la formula che rende il link cliccabile
-        valore_link = f'=HYPERLINK("{link_drive}", "SCARICA SCHEDA")'
-    else:
-        valore_link = ""
+    # TRASFORMIAMO IL DIZIONARIO DATI IN STRINGA DI TESTO
+    # Questo permette di salvare l'intera logica nella cella H di Sheets
+    dna_scheda = json.dumps(dati_ai)
 
-    # 2. COSTRUZIONE RIGA (Ordine Tassativo)
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -281,7 +282,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         dati_ai.get('cardio_protocol', ''),
         note_coach,
         dati_ai.get('analisi_clinica', ''),
-        valore_link  # <--- Qui entra la formula =HYPERLINK
+        dna_scheda  # <--- SALVIAMO I DATI PURI, NON IL LINK
     ]
     
     try:
@@ -291,12 +292,10 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         client = gspread.authorize(creds)
         
         sheet = client.open("AREA199_DB").sheet1 
-        
-        # 3. COMANDO SPECIALE 'USER_ENTERED' PER ATTIVARE IL LINK
-        sheet.append_row(nuova_riga, value_input_option='USER_ENTERED')
+        sheet.append_row(nuova_riga) # Invio standard
         return True
     except Exception as e:
-        st.error(f"ERRORE SYNC: {e}")
+        st.error(f"ERRORE DB: {e}")
         return False
 
 def recupera_protocollo_da_db(email_target):
@@ -1073,40 +1072,35 @@ if 'last_ai' in st.session_state:
         ffmi=st.session_state.get('last_ffmi', 0)
     )
     
-    # 3. FUNZIONE CALLBACK SEQUENZIALE
+    # 3. FUNZIONE CALLBACK (MODALITÀ DATABASE PURO)
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
         nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
-            st.toast("☁️ Upload su Drive in corso...", icon="🚀") 
-            
-            # FASE 1: UPLOAD SU DRIVE
-            link_generato = upload_to_drive(html_report, f"AREA199_{nome_atleta}.html")
-            
-            if link_generato:
-                # FASE 2: AGGIORNAMENTO DATABASE
+            with st.spinner("💾 Archiviazione Dati nel Database Centrale..."):
+                # Salviamo direttamente nel DB senza passare da Drive
                 ok = aggiorna_db_glide(
                     nome=nome_atleta, 
                     email=mail_sicura, 
                     dati_ai=res, 
-                    link_drive=link_generato, # <--- Passa la stringa corretta
+                    link_drive="IGNORED", # Non serve più
                     note_coach=res.get('warning_tecnico','')
                 )
+                
                 if ok:
-                    st.toast(f"✅ SINCRONIZZATO: {mail_sicura}", icon="🔥")
+                    st.success(f"✅ PROTOCOLLO ATTIVATO PER: {mail_sicura}")
+                    st.toast("Database Aggiornato", icon="🚀")
                     st.balloons()
                 else:
-                    st.error("⚠️ Errore Database Sheets.")
-            else:
-                st.error("⚠️ Errore Drive (Link mancante).")
+                    st.error("⚠️ Errore Scrittura Database.")
         else:
-            st.toast("⚠️ Email mancante!", icon="📧")
+            st.warning("⚠️ Email mancante! Inseriscila nel menu laterale.")
 
-    # 4. TASTO FINALE DI ESECUZIONE
+    # 4. TASTO UNICO
     st.download_button(
-        label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
+        label="📥 SCARICA COPIA LOCALE E ATTIVA SU DATABASE", 
         data=html_report, 
         file_name=f"AREA199_{st.session_state['last_nome']}.html", 
         mime="text/html",
