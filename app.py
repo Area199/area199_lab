@@ -701,6 +701,9 @@ else:
     st.stop()
 
 # --- ATLETA VIEW ---
+# ==============================================================================
+# INTERFACCIA ATLETA (FIX PARAMETRO ETA)
+# ==============================================================================
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
     email_login = st.text_input("Email Atleta").strip()
@@ -711,13 +714,22 @@ if not is_coach:
             
             if dati_row is not None:
                 st.success(f"Bentornato/a, {nome_atleta}.")
-                # Rigenerazione HTML
+                
+                # Rigenerazione Immagini
+                df_img_regen = ottieni_db_immagini()
+                
+                # FIX CRITICO: AGGIUNTO 'eta=30' PER EVITARE IL CRASH
                 html_rebuilt = crea_report_totale(
                     nome=nome_atleta,
-                    dati_ai=dati_row, # Qui i dati sono già un dict perché recupera_protocollo li parsa
+                    dati_ai=dati_row, 
                     grafici_html_list=[], 
-                    df_img=ottieni_db_immagini(),
-                    limitazioni="Vedi Note Coach", bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D"
+                    df_img=df_img_regen,
+                    limitazioni="Vedi Note Coach", 
+                    bf="N/D", 
+                    somatotipo="N/D", 
+                    whr="N/D", 
+                    ffmi="N/D",
+                    eta=30 # <--- QUESTO MANCAVA E FACEVA CRASHARE TUTTO
                 )
                 
                 st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
@@ -729,7 +741,7 @@ if not is_coach:
                     type="primary"
                 )
             else:
-                st.error("❌ Nessun protocollo trovato.")
+                st.error("❌ Nessun protocollo trovato o Email errata.")
     st.stop()
 
 # --- COACH VIEW ---
