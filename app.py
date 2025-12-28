@@ -186,53 +186,47 @@ if not access_granted:
 # ==============================================================================
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
-    st.markdown("Inserisci la mail registrata per scaricare il protocollo.")
-    
     email_login = st.text_input("Email Atleta").strip()
     
     if email_login:
-        with st.spinner("Accesso al Database Area 199..."):
-            # Recuperiamo la riga dal database
+        with st.spinner("Lettura Database Area 199..."):
             dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
             
             if dati_row is not None:
                 st.success(f"Bentornato/a, {nome_atleta}.")
                 
-                # RECUPERO IL "DNA" (JSON) DALLA COLONNA H
+                # 1. Recuperiamo il codice "sporco" dalla colonna H
                 raw_data = dati_row.get('Link_Scheda', '')
                 
                 try:
-                    # Tentiamo di leggere il contenuto come Dati Tecnici
-                    dati_ai_reconstructed = json.loads(raw_data)
-                    
-                    # RIGENERIAMO IL REPORT HTML SUL MOMENTO
-                    # Recuperiamo le immagini per ricostruire la grafica
-                    df_img_regen = ottieni_db_immagini()
-                    
-                    html_rebuilt = crea_report_totale(
-                        nome=nome_atleta,
-                        dati_ai=dati_ai_reconstructed, # Usiamo i dati estratti dalla cella
-                        grafici_html_list=[], # I grafici storici richiederebbero ricalcolo complesso, li omettiamo per velocità
-                        df_img=df_img_regen,
-                        limitazioni="Vedi Note Coach",
-                        bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D" # Dati non salvati nello storico breve
-                    )
-                    
-                    # MOSTRA IL TASTO DI DOWNLOAD DIRETTO
-                    st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
-                    st.download_button(
-                        label="SCARICA SCHEDA COMPLETA (HTML)",
-                        data=html_rebuilt,
-                        file_name=f"AREA199_{nome_atleta}_Protocol.html",
-                        mime="text/html",
-                        type="primary" # Tasto Rosso
-                    )
-                    
+                    # 2. Se è un JSON valido, rigeneriamo la scheda
+                    if isinstance(raw_data, str) and raw_data.startswith('{'):
+                        dati_ai_reconstructed = json.loads(raw_data)
+                        
+                        # Rigeneriamo le immagini e l'HTML
+                        df_img_regen = ottieni_db_immagini()
+                        html_rebuilt = crea_report_totale(
+                            nome=nome_atleta,
+                            dati_ai=dati_ai_reconstructed,
+                            grafici_html_list=[], 
+                            df_img=df_img_regen,
+                            limitazioni="Vedi Note Coach", bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D"
+                        )
+                        
+                        st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
+                        st.download_button(
+                            label="SCARICA SCHEDA COMPLETA (HTML)",
+                            data=html_rebuilt,
+                            file_name=f"AREA199_{nome_atleta}.html",
+                            mime="text/html",
+                            type="primary"
+                        )
+                    else:
+                        st.warning("⚠️ Formato dati non valido o vecchio link Drive.")
                 except Exception as e:
-                    st.error("Errore nella ricostruzione del protocollo. I dati nel database potrebbero essere corrotti.")
-                    st.warning(f"Codice Errore: {e}")
+                    st.error(f"Errore ricostruzione: {e}")
             else:
-                st.error("❌ Nessun protocollo attivo trovato per questa email.")
+                st.error("❌ Nessun protocollo trovato.")
     st.stop()
 # --- CONFIGURAZIONE COSTANTI ---
 DB_CLIENTI = "database_clienti"
@@ -271,7 +265,7 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 # ==============================================================================
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
-    """Salva il DNA della scheda (JSON) direttamente nel Database."""
+    """Salva il DNA della scheda (JSON) direttamente nel Database (NO DRIVE)."""
     
     # TRASFORMIAMO IL DIZIONARIO DATI IN STRINGA DI TESTO
     # Questo permette di salvare l'intera logica nella cella H di Sheets
@@ -1075,26 +1069,25 @@ if 'last_ai' in st.session_state:
         ffmi=st.session_state.get('last_ffmi', 0)
     )
     
-    # 3. FUNZIONE CALLBACK (MODALITÀ DATABASE PURO)
+   # 3. FUNZIONE CALLBACK (SENZA DRIVE - SOLO DATABASE)
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
         nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
         if mail_sicura and res:
-            with st.spinner("💾 Archiviazione Dati nel Database Centrale..."):
-                # Salviamo direttamente nel DB senza passare da Drive
+            with st.spinner("💾 Salvataggio nel Database..."):
+                # Chiamiamo l'aggiornamento SENZA passare link_drive
                 ok = aggiorna_db_glide(
                     nome=nome_atleta, 
                     email=mail_sicura, 
                     dati_ai=res, 
-                    link_drive="IGNORED", # Non serve più
+                    link_drive="DATABASE_INTERNAL", # Placeholder
                     note_coach=res.get('warning_tecnico','')
                 )
                 
                 if ok:
-                    st.success(f"✅ PROTOCOLLO ATTIVATO PER: {mail_sicura}")
-                    st.toast("Database Aggiornato", icon="🚀")
+                    st.success(f"✅ PROTOCOLLO ATTIVATO NEL DB: {mail_sicura}")
                     st.balloons()
                 else:
                     st.error("⚠️ Errore Scrittura Database.")
@@ -1103,7 +1096,7 @@ if 'last_ai' in st.session_state:
 
     # 4. TASTO UNICO
     st.download_button(
-        label="📥 SCARICA COPIA LOCALE E ATTIVA SU DATABASE", 
+        label="📥 SCARICA COPIA E ATTIVA SU DATABASE", 
         data=html_report, 
         file_name=f"AREA199_{st.session_state['last_nome']}.html", 
         mime="text/html",
