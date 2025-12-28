@@ -263,10 +263,16 @@ TONO: DARK SCIENCE. RIVOLGITI AL CLIENTE CON IL "TU". VIETATO TERZA PERSONA.
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     """Sincronizzazione database Google Sheets con Link Attivo."""
     
-    # 1. COSTRUZIONE FORMULA HYPERLINK
-    # Se c'è un link, creiamo la formula che Sheets trasforma in tasto blu
-    valore_link = f'=HYPERLINK("{link_drive}", "{link_drive}")' if link_drive else ""
+    # 1. FIREWALL & FORMULA: Se link_drive è sbagliato (è un dict), lo svuotiamo.
+    if isinstance(link_drive, dict) or isinstance(link_drive, list):
+        valore_link = ""
+    elif link_drive and str(link_drive).startswith("http"):
+        # Crea la formula che rende il link cliccabile
+        valore_link = f'=HYPERLINK("{link_drive}", "SCARICA SCHEDA")'
+    else:
+        valore_link = ""
 
+    # 2. COSTRUZIONE RIGA (Ordine Tassativo)
     nuova_riga = [
         datetime.now().strftime("%Y-%m-%d"),
         email, 
@@ -275,7 +281,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         dati_ai.get('cardio_protocol', ''),
         note_coach,
         dati_ai.get('analisi_clinica', ''),
-        valore_link  # <--- INSERIAMO LA FORMULA, NON IL TESTO
+        valore_link  # <--- Qui entra la formula =HYPERLINK
     ]
     
     try:
@@ -286,11 +292,8 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         
         sheet = client.open("AREA199_DB").sheet1 
         
-        # 2. INVIO CON PARSING DELLE FORMULE (FONDAMENTALE)
-        # 'USER_ENTERED' dice a Google: "Tratta questo testo come se lo avessi digitato io"
-        # Questo attiva il riconoscimento della formula =HYPERLINK
+        # 3. COMANDO SPECIALE 'USER_ENTERED' PER ATTIVARE IL LINK
         sheet.append_row(nuova_riga, value_input_option='USER_ENTERED')
-        
         return True
     except Exception as e:
         st.error(f"ERRORE SYNC: {e}")
@@ -1051,10 +1054,9 @@ if 'last_ai' in st.session_state:
             st.warning(f"Errore rendering grafici: {e}")
 
     # 2. GENERAZIONE REPORT HTML
-    # Nota: Assicurati che non ci siano parentesi orfane qui sotto
     html_report = crea_report_totale(
-        nome=nome_atleta,
-        dati_ai=st.session_state.get('last_ai', {}),
+        nome=st.session_state['last_nome'],
+        dati_ai=st.session_state['last_ai'],
         grafici_html_list=grafici_html,
         df_img=df_img,
         limitazioni=st.session_state.get('last_limitazioni', ''),
@@ -1063,46 +1065,45 @@ if 'last_ai' in st.session_state:
         whr=st.session_state.get('last_whr', 0),
         ffmi=st.session_state.get('last_ffmi', 0)
     )
-
-    # 3. DEFINIZIONE CALLBACK AZIONE CLOUD
-   # ... (questo va alla fine della sezione IF IS_COACH) ...
-
-    # 3. FUNZIONE DI INVIO DIRETTO (SENZA DRIVE)
-    # Funzione di salvataggio diretto (Senza Drive)
-    def azione_invio_diretto():
-        mail = st.session_state.get('last_email_sicura')
-        nome = st.session_state.get('last_nome')
+    
+    # 3. FUNZIONE CALLBACK SEQUENZIALE (Definita nel posto giusto)
+    def azione_invio_glide():
+        mail_sicura = st.session_state.get('last_email_sicura')
+        nome_atleta = st.session_state.get('last_nome')
         res = st.session_state.get('last_ai')
         
-        if mail and res:
-            with st.spinner("💾 Salvataggio nel Database..."):
-                # Chiamiamo l'aggiornamento SENZA passare link_drive (perché non usiamo più Drive)
+        if mail_sicura and res:
+            st.toast("☁️ Upload su Drive in corso...", icon="oss") 
+            
+            # FASE 1: UPLOAD SU DRIVE
+            link_generato = upload_to_drive(html_report, f"AREA199_{nome_atleta}.html")
+            
+            if link_generato:
+                # FASE 2: AGGIORNAMENTO DATABASE
+                # Usiamo i nomi espliciti (link_drive=...) per evitare che Python si confonda
                 ok = aggiorna_db_glide(
-                    nome=nome, 
-                    email=mail, 
+                    nome=nome_atleta, 
+                    email=mail_sicura, 
                     dati_ai=res, 
+                    link_drive=link_generato, # <--- Questo assicura che il link vada nella colonna giusta
                     note_coach=res.get('warning_tecnico','')
                 )
                 if ok:
-                    st.toast(f"✅ DATI SALVATI: {mail}", icon="🚀")
-                    st.success("Protocollo salvato nel Database.")
+                    st.toast(f"✅ SINCRONIZZATO: {mail_sicura}", icon="🚀")
+                    st.balloons()
                 else:
-                    st.error("Errore Database.")
+                    st.error("⚠️ Errore Database Sheets.")
+            else:
+                st.error("⚠️ Errore Drive (Link mancante).")
         else:
-            st.warning("Email mancante.")
+            st.toast("⚠️ Email mancante!", icon="📧")
 
-    # Due tasti separati: Uno per scaricare il file, uno per salvare sul DB
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        st.download_button(
-            label="📥 SCARICA COPIA LOCALE", 
-            data=html_report, 
-            file_name=f"AREA199_{st.session_state['last_nome']}.html", 
-            mime="text/html"
-        )
-    with col_btn2:
-        st.button(
-            "☁️ SALVA NEL DATABASE", 
-            on_click=azione_invio_diretto, 
-            type="primary"
-        )
+    # 4. TASTO FINALE DI ESECUZIONE
+    st.download_button(
+        label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
+        data=html_report, 
+        file_name=f"AREA199_{st.session_state['last_nome']}.html", 
+        mime="text/html",
+        use_container_width=True,
+        on_click=azione_invio_glide 
+    )
