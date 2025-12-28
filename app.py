@@ -400,7 +400,7 @@ def salva_dati_check(nome, dati):
         
     except Exception as e:
         st.error(f"❌ ERRORE GENERICO: {str(e)}")
-        return False)
+        return False
 
 def grafico_trend(df, col_name, colore="#ff0000"):
     if col_name not in df.columns: return None
