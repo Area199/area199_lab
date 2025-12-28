@@ -244,40 +244,49 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
 
 def upload_to_drive(file_content, file_name, folder_id="1AT4sFPp33Hd-k2O3r4E92rvMxyUYX1qa"):
     """
-    Carica il report HTML direttamente in memoria su Google Drive.
+    Carica il report HTML su Google Drive gestendo correttamente la quota dei Service Accounts.
     """
     try:
-        # Recupero credenziali dai secrets (usa le stesse di gspread)
         s_info = st.secrets["gcp_service_account"]
         scopes = ["https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
-        
         service = build('drive', 'v3', credentials=creds)
         
-        # Salvataggio temporaneo del file per l'upload
+        # Salvataggio temporaneo
         temp_path = f"temp_{file_name}"
         with open(temp_path, "w", encoding="utf-8") as f:
             f.write(file_content)
 
         file_metadata = {
             'name': file_name,
-            'parents': [folder_id] if folder_id else []
+            'parents': [folder_id]
         }
+        
         media = MediaFileUpload(temp_path, mimetype='text/html', resumable=True)
         
-        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        # NOTA: supportsAllDrives=True è fondamentale per evitare errori di quota 403
+        file = service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id',
+            supportsAllDrives=True 
+        ).execute()
+        
         file_id = file.get('id')
 
-        # Permessi: Chiunque abbia il link può vedere (Viewer)
-        service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'viewer'}).execute()
+        # Permessi di visualizzazione pubblica
+        service.permissions().create(
+            fileId=file_id, 
+            body={'type': 'anyone', 'role': 'viewer'},
+            supportsAllDrives=True
+        ).execute()
         
-        # Pulizia file temporaneo
         if os.path.exists(temp_path): os.remove(temp_path)
         
-        # Restituisce il link per il download diretto
+        # Link diretto
         return f"https://drive.google.com/uc?export=download&id={file_id}"
     except Exception as e:
-        st.error(f"ERRORE UPLOAD DRIVE: {e}")
+        st.error(f"ERRORE CRITICO DRIVE (Quota/Permessi): {e}")
         return None
 # ==============================================================================
 # 2. LOGICA MATEMATICA & BIOMETRIA AVANZATA
