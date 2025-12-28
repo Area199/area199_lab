@@ -927,6 +927,10 @@ if btn_gen:
 # 6. EXPORT & SYNC (CORREZIONE INDENTAZIONE)
 # ==============================================================================
 
+# ==============================================================================
+# 6. EXPORT & SYNC (NORMALIZZAZIONE INTEGRALE)
+# ==============================================================================
+
 if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT & SYNC")
@@ -946,7 +950,7 @@ if 'last_ai' in st.session_state:
             g_vita = grafico_trend(df_hist, "Vita", colore="#ffff00") 
             if g_vita: grafici_html.append(pio.to_html(g_vita, full_html=False, include_plotlyjs='cdn'))
         except Exception as e:
-            st.error(f"Errore generazione grafici: {e}")
+            st.error(f"Errore rendering grafici: {e}")
 
     # 2. GENERAZIONE REPORT HTML
     html_report = crea_report_totale(
@@ -988,7 +992,7 @@ if 'last_ai' in st.session_state:
         else:
             st.toast("⚠️ Email non trovata!", icon="📧")
 
-    # 4. BOTTONE DI DOWNLOAD E INVIO
+    # 4. BOTTONE UNICO DI DOWNLOAD E SINCRONIZZAZIONE
     st.download_button(
         label="📥 SCARICA REPORT E INVIA A CLOUD AREA 199", 
         data=html_report, 
