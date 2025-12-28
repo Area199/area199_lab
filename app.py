@@ -262,6 +262,8 @@ if pwd == "PETRUZZI199":
 # --- CAMPI RIPRISTINATI ---
         limitazioni = st.text_area("Limitazioni Tecniche (es. Ernia, Infortuni)", help="Inserisci patologie o impedimenti meccanici")
         giorni = st.multiselect("Giorni di Allenamento", ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"], default=["LUN", "MER", "VEN"])
+# --- PARAMETRO FREQUENZA ---
+        multi_freq = st.checkbox("ATTIVA MULTIFREQUENZA", value=True, help="Se deselezionato, la scheda sarà generata in Monofrequenza")
         # --------------------------
         
         st.markdown("---")
@@ -283,16 +285,20 @@ if pwd == "PETRUZZI199":
     if btn:
         som, ff, bf = calcola_somatotipo_scientifico(peso, alt, polso, vita, fianchi, collo, sesso)
         
-        # Inclusione dei parametri ripristinati nel prompt per l'AI
+        # Mapping della scelta per l'AI
+        tipo_freq = "MULTIFREQUENZA" if multi_freq else "MONOFREQUENZA"
+        
         input_ai = {
             "goal": goal, 
             "durata_target": durata, 
             "meta_bio": f"{som}, FFMI {ff}, BF {bf}%", 
-            "limitazioni": limitazioni,         # <-- RIPRISTINATO
-            "giorni_selezionati": giorni,       # <-- RIPRISTINATO
+            "limitazioni": limitazioni,
+            "giorni_selezionati": giorni,
+            "frequenza_target": tipo_freq,  # <-- NUOVO PARAMETRO
             "custom_instructions": ""
         }
         
+        # Il prompt dell'AI userà questa informazione per decidere lo split
         res = genera_protocollo_petruzzi(input_ai, api)
         # ... resto del codice
         
