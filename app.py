@@ -318,60 +318,71 @@ if pwd == "PETRUZZI199":
             st.write(res)
 # 5. VISUALIZZAZIONE RISULTATI E STORICO
 if 'ai' in st.session_state:
-    st.title(f"☢️ AREA 199 LAB: {st.session_state['n'].upper()}")
+    res = st.session_state['ai']
+    nome_atleta = st.session_state.get('n', 'Atleta')
     
-    # Layout a due colonne: Grafico a sinistra, Dati a destra
-    col1, col2 = st.columns([2, 1])
+    # --- HEADER REPORT ---
+    st.markdown(f"<h1>LAB REPORT: {nome_atleta.upper()}</h1>", unsafe_allow_html=True)
     
-    with col1:
-        df_storico = leggi_storico(st.session_state['n'])
+    # --- AREA BIOMETRICA E GRAFICO ---
+    col_g, col_d = st.columns([2, 1])
+    
+    with col_g:
+        df_storico = leggi_storico(nome_atleta)
         if df_storico is not None and not df_storico.empty:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=df_storico['Data'], 
-                y=df_storico['Peso'], 
-                mode='lines+markers',
-                line=dict(color='#ff0000', width=3),
-                marker=dict(size=8, color='#ffffff')
-            ))
-            fig.update_layout(
-                title="ANALISI STORICA PESO",
-                template="plotly_dark",
-                height=300,
-                margin=dict(l=0,r=0,t=40,b=0),
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)'
-            )
+            fig.add_trace(go.Scatter(x=df_storico['Data'], y=df_storico['Peso'], 
+                                     mode='lines+markers', line=dict(color='#ff0000', width=3)))
+            fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=30,b=0),
+                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Box dati sintetico
+
+    with col_d:
         st.markdown(f"""
-        <div style="background-color: #1a1a1a; padding: 15px; border-left: 5px solid #ff0000; margin-top: 40px;">
-            <p style="margin:0; font-size:14px; color:#888;">SOMATOTIPO</p>
-            <p style="margin:0; font-size:20px; font-weight:bold; color:#ff0000;">{st.session_state['som']}</p>
-            <hr style="margin:10px 0; border:0.5px solid #333;">
-            <p style="margin:0; font-size:14px; color:#888;">BODY FAT %</p>
-            <p style="margin:0; font-size:20px; font-weight:bold; color:#fff;">{st.session_state['bf']}%</p>
-            <hr style="margin:10px 0; border:0.5px solid #333;">
-            <p style="margin:0; font-size:14px; color:#888;">FFMI</p>
-            <p style="margin:0; font-size:20px; font-weight:bold; color:#fff;">{st.session_state['ff']}</p>
+        <div class="analysis-preview">
+            <p style="color:#ff0000; font-weight:bold; margin:0;">DATI ATTUALI</p>
+            <p style="margin:5px 0;">SOMATOTIPO: {st.session_state.get('som', 'N/D')}</p>
+            <p style="margin:5px 0;">BF: {st.session_state.get('bf', 'N/D')}% | FFMI: {st.session_state.get('ff', 'N/D')}</p>
         </div>
         """, unsafe_allow_html=True)
+        st.error(f"WARNING TECNICO: {res.get('warning_tecnico', 'Nessuno')}")
 
     st.markdown("---")
+
+    # --- PROTOCOLO ALLENAMENTO CON IMMAGINI ---
+    st.header("PIANO OPERATIVO")
     
-    # Rendering della tabella allenamento
-    res = st.session_state['ai']
-    for giorno, esercizi in res.get('tabella', {}).items():
-        with st.expander(f"🏋️ {giorno}", expanded=True):
-            st.table(pd.DataFrame(esercizi))
-    # Visualizzazione della Scheda Generata (JSON o Tabella)
-    st.markdown("### PROTOCOLO GENERATO")
-    st.write(st.session_state['ai'])
-elif pwd == "AREA199":
-    # --- ATLETA PANEL ---
-    st.title("Atleta Portal")
-    # Qui andrebbe il recupero dati da DB se necessario
-else:
-    st.warning("Insert Credentials")
+    tabella = res.get('tabella', {})
+    if not tabella:
+        st.warning("Nessun esercizio generato. Riprova l'elaborazione.")
+    else:
+        for giorno, esercizi in tabella.items():
+            with st.expander(f"💀 {giorno.upper()}", expanded=True):
+                # Creiamo colonne per simulare una tabella con immagini
+                for ex in esercizi:
+                    c1, c2, c3 = st.columns([1, 3, 2])
+                    
+                    # Recupero immagine
+                    img_url = trova_img(ex.get('Esercizio', ''), df_i)
+                    
+                    with c1:
+                        if img_url: st.image(img_url, width=80)
+                        else: st.caption("No Img")
+                    
+                    with c2:
+                        st.markdown(f"**{ex.get('Esercizio', '').upper()}**")
+                        st.markdown(f"Sets: {ex.get('Sets')} | Reps: {ex.get('Reps')} | Rec: {ex.get('Recupero')}")
+                        st.caption(f"TUT: {ex.get('TUT')} | Esecuzione: {ex.get('Esecuzione')}")
+                    
+                    with c3:
+                        st.info(f"Note: {ex.get('Note', 'N/D')}")
+                    st.markdown("<hr style='border:0.1px solid #222;'>", unsafe_allow_html=True)
+
+    # --- CARDIO PROTOCOL ---
+    if res.get('cardio_protocol'):
+        st.markdown(f"""
+        <div class='warning-box'>
+            <h3 style='margin:0;'>CARDIO PROTOCOL</h3>
+            <p>{res.get('cardio_protocol')}</p>
+        </div>
+        """, unsafe_allow_html=True)
