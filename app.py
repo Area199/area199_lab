@@ -1,3 +1,53 @@
+Skip to content
+Navigation Menu
+Platform
+Solutions
+Resources
+Open Source
+Enterprise
+Pricing
+
+Search or jump to...
+Sign in
+Sign up
+Area199
+/
+area199_lab
+Public
+Code
+Issues
+Pull requests
+Actions
+Projects
+Security
+Insights
+Commit ba649c9
+Area199
+Area199
+authored
+yesterday
+Verified
+Add files via upload
+main
+1 parent 
+4ae9aa3
+ commit 
+ba649c9
+File tree
+Filter files…
+app.py
+1 file changed
++44
+-41
+lines changed
+Search within code
+ 
+‎app.py‎
++44
+-41
+Lines changed: 44 additions & 41 deletions
+Original file line number	Diff line number	Diff line change
+@@ -1,1001 +1,1004 @@
 import streamlit as st
 import pandas as pd
 import os
@@ -106,7 +156,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         dati_ai.get('analisi_clinica', ''),  # Analisi
         dna_scheda                           # <--- IL PAYLOAD DATI (Cruciale)
     ]
-    
+
     try:
         # Usa SOLO lo scope spreadsheets se drive da problemi
         scopes = [
@@ -116,7 +166,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         s_info = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(s_info, scopes=scopes)
         client = gspread.authorize(creds)
-        
+
         sheet = client.open("AREA199_DB").sheet1 
         sheet.append_row(nuova_riga) 
         return True
@@ -135,22 +185,22 @@ def recupera_protocollo_da_db(email_target):
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
         client = gspread.authorize(creds)
         sheet = client.open("AREA199_DB").sheet1
-        
+
         records = sheet.get_all_records()
         df = pd.DataFrame(records)
-        
+
         # Colonna Email (Adatta se il nome cambia)
         col_email = 'Email_Cliente' if 'Email_Cliente' in df.columns else 'Email'
-        
+
         user_data = df[df[col_email].astype(str).str.strip().str.lower() == email_target.strip().lower()]
-        
+
         if not user_data.empty:
             last_record = user_data.iloc[-1]
             raw_json = last_record['Link_Scheda'] 
             # Se è un JSON valido lo parsiamo, altrimenti torniamo None
             if isinstance(raw_json, str) and raw_json.startswith('{'):
                 return json.loads(raw_json), last_record['Nome']
-            
+
         return None, None
     except Exception as e:
         # Silenzioso o log
@@ -196,13 +246,13 @@ def calcola_somatotipo_scientifico(peso, altezza_cm, polso, vita, fianchi, collo
     if rpi >= 44: score_ecto += 3
     elif rpi >= 42: score_ecto += 2
     elif rpi >= 40: score_ecto += 1
-    
+
     score_meso = 0
     base_ffmi = 19 if sesso == "Uomo" else 15
     if ffmi >= (base_ffmi + 4): score_meso += 3
     elif ffmi >= (base_ffmi + 2): score_meso += 2
     elif ffmi >= base_ffmi: score_meso += 1
-    
+
     ratio_ossatura = altezza_cm / polso if polso > 0 else 10.5
     if ratio_ossatura < 10.0: score_meso += 1 
 
@@ -211,14 +261,14 @@ def calcola_somatotipo_scientifico(peso, altezza_cm, polso, vita, fianchi, collo
     if bf > (thresh_bf + 8): score_endo += 3
     elif bf > (thresh_bf + 3): score_endo += 2
     elif bf > thresh_bf: score_endo += 1
-    
+
     if (sesso == "Uomo" and whr > 0.92) or (sesso == "Donna" and whr > 0.85):
         score_endo += 1
 
     scores = {'ECTO': score_ecto, 'MESO': score_meso, 'ENDO': score_endo}
     dominante = max(scores, key=scores.get)
     valore_max = scores[dominante]
-    
+
     somatotipo = "BILANCIATO"
     if scores['ENDO'] >= 2 and scores['MESO'] >= 2: somatotipo = "ENDO-MESO (Power Builder)"
     elif scores['ECTO'] >= 2 and scores['MESO'] >= 2: somatotipo = "ECTO-MESO (Atletico)"
@@ -274,7 +324,7 @@ def trova_img(nome, df):
 
     best_match, best_score = None, 0
     target_words = set(search_key.split())
-    
+
     for idx, row in df.iterrows():
         db_name = row['nome'].lower().replace('-', ' ')
         if any(b in db_name for b in blacklist): continue
@@ -286,7 +336,7 @@ def trova_img(nome, df):
         if score > best_score:
             best_score = score
             best_match = row
-            
+
     if best_match is not None and best_score > 0.5:
         return best_match['img1'], best_match['img2']
     return None, None
@@ -327,7 +377,7 @@ def grafico_simmetria(df, parte_corpo):
 def genera_protocollo_petruzzi(dati_input, api_key):
     client = OpenAI(api_key=api_key)
     st.toast("⚙️ 1/3: Analisi Petruzzi & Calcolo Volume...", icon="💀")
-    
+
     # 1. BIOMETRIA
     whr = calcola_whr(dati_input['misure']['Vita'], dati_input['misure']['Fianchi'])
     somato_str, ffmi_val, bf_val = calcola_somatotipo_scientifico(
@@ -336,7 +386,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
         dati_input['misure']['Fianchi'], dati_input['misure']['Collo'], 
         dati_input['sesso']
     )
-    
+
     # 2. ANALISI TREND STORICO (IL FEEDBACK LOOP)
     trend_analysis = "Nessun dato storico (Primo Check)."
     try:
@@ -358,7 +408,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
     giorni_lista = dati_input['giorni']
     if not giorni_lista: giorni_lista = ["Lunedì", "Mercoledì", "Venerdì"]
     giorni_str = ", ".join(giorni_lista).upper()
-    
+
     # 5. PROMPT UNIFICATO (INTEGRATO CON Z1/Z2 E MATRICE)
     system_prompt = f"""
     SEI IL DOTT. ANTONIO PETRUZZI. DIRETTORE TECNICO AREA 199.
@@ -378,36 +428,28 @@ def genera_protocollo_petruzzi(dati_input, api_key):
     - BF NAVY: {bf_val}%
     - OBIETTIVO: {dati_input['goal']}
     - LIMITAZIONI: {dati_input['limitazioni'] if dati_input['limitazioni'] else "NESSUNO"}
-
     *** ANALISI PROGRESSI (TREND) ***
     {trend_analysis}
     (USA QUESTO DATO: Se l'obiettivo è Massa e il peso scende -> Aumenta Volume/Carichi. Se Cut e il peso stalla -> Aumenta Densità/Cardio).
-
     *** LOGICA TECNICA AREA 199 (MANDATORIA) ***
-
     1. MATRICE DI DISTRIBUZIONE:
     - Se Giorni = 3 e Multifrequenza = NO -> Genera PUSH / PULL / LEGS.
     - Se Giorni = 3 e Multifrequenza = SI -> Genera FULL BODY / UPPER / LOWER.
     - Se Giorni = 4 -> Genera UPPER / LOWER / UPPER / LOWER.
     - Se Giorni >= 5 -> Genera SPLIT PER DISTRETTI (PPL+Upper/Lower o Bro-Split Scientifica).
-
     2. MODULAZIONE MORFOLOGICA (FFMI & RPI DRIVEN):
     - ECTOMORFO (RPI Alto, Struttura esile): Basso volume sistemico, recuperi lunghi (3-4 min sui big), focus tensione meccanica. Evita tecniche ad alto impatto metabolico.
     - MESOMORFO (FFMI Alto): Alto volume tollerabile, inserimento tecniche di intensità.
     - ENDOMORFO (BF Alta / WHR Alto): Alta densità, recuperi incompleti (60-90s), focus stress metabolico e consumo ossigeno post-ex (EPOC).
-
     3. REGOLE ESERCIZI:
     - Inizia sempre con un Fondamentale (Power) o una variante biomeccanica superiore.
     - Usa nomi inglesi ma spiega i dettagli tecnici in ITALIANO.
     - Se ci sono limitazioni fisiche indicate, evita tassativamente esercizi che stressano quella zona.
-
     4. CARDIO & METABOLIC:
     - Ogni riferimento al cardio deve essere in %FTP E IN ZONE Z1/Z2 (Es. 20 min Z2 @ 65% FTP).
-
     *** ISTRUZIONI TATTICHE EXTRA ***
     "{dati_input['custom_instructions']}"
     (Se richiesto Cardio, inseriscilo come ULTIMO esercizio della lista).
-
     ---------------------------------------------------------------------
     OUTPUT JSON
     ---------------------------------------------------------------------
@@ -433,7 +475,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
         }}
     }}
     """
-    
+
     try:
         st.toast(f"📡 2/3: Generazione {target_ex} Esercizi...", icon="🧠")
         res = client.chat.completions.create(
@@ -486,32 +528,25 @@ def genera_protocollo_petruzzi(dati_input, api_key):
     - MORFOLOGIA: {somato_str} (FFMI: {ffmi_val})
     - LIMITAZIONI: {dati_input['limitazioni'] if dati_input['limitazioni'] else "NESSUNO"}
     - OBIETTIVO: {dati_input['goal']}
-
     *** LOGICA TECNICA AREA 199 (MANDATORIA) ***
-
     1. MATRICE DI DISTRIBUZIONE:
     - Se Giorni = 3 e Multifrequenza = NO -> Genera PUSH / PULL / LEGS.
     - Se Giorni = 3 e Multifrequenza = SI -> Genera FULL BODY / UPPER / LOWER.
     - Se Giorni = 4 -> Genera UPPER / LOWER / UPPER / LOWER.
     - Se Giorni >= 5 -> Genera SPLIT PER DISTRETTI (PPL+Upper/Lower o Bro-Split Scientifica).
-
     2. MODULAZIONE MORFOLOGICA (FFMI & RPI DRIVEN):
     - ECTOMORFO (RPI Alto, Struttura esile): Basso volume sistemico, recuperi lunghi (3-4 min sui big), focus tensione meccanica. Evita tecniche ad alto impatto metabolico.
     - MESOMORFO (FFMI Alto): Alto volume tollerabile, inserimento tecniche di intensità.
     - ENDOMORFO (BF Alta / WHR Alto): Alta densità, recuperi incompleti (60-90s), focus stress metabolico e consumo ossigeno post-ex (EPOC).
-
     3. REGOLE ESERCIZI:
     - Inizia sempre con un Fondamentale (Power) o una variante biomeccanica superiore.
     - Usa nomi inglesi ma spiega i dettagli tecnici in ITALIANO.
     - Se ci sono limitazioni fisiche indicate, evita tassativamente esercizi che stressano quella zona.
-
     4. CARDIO & METABOLIC:
     - Ogni riferimento al cardio deve essere in %FTP, IN RANGEFC E IN ZONE Z1/Z2.
-
     *** ISTRUZIONI TATTICHE EXTRA ***
     "{dati_input['custom_instructions']}"
     (Se richiesto Cardio, inseriscilo come ULTIMO esercizio della lista).
-
     ---------------------------------------------------------------------
     OUTPUT JSON
     ---------------------------------------------------------------------
@@ -537,7 +572,7 @@ def genera_protocollo_petruzzi(dati_input, api_key):
         }}
     }}
     """
-    
+
     try:
         st.toast(f"📡 2/3: Generazione {target_ex} Esercizi...", icon="🧠")
         res = client.chat.completions.create(
@@ -572,7 +607,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     oggi = datetime.now().strftime("%d/%m/%Y")
     workout_html = ""
     alert_html = f"<div class='warning-box'>⚠️ <b>LIMITAZIONI E INFORTUNI:</b> {limitazioni}</div>" if limitazioni else ""
-    
+
     # 1. RECUPERO DATI BIOMETRICI (Persistence Check)
     meta = dati_ai.get('meta_biometria', {})
     if str(somatotipo) in ["N/D", "None", ""] and 'somato' in meta: somatotipo = meta['somato']
@@ -582,7 +617,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
 
     # Pulizia visuale
     somato_display = str(somatotipo).split('(')[0].strip() if somatotipo else "N/D"
-    
+
     # Calcolo FC Max per il report
     fc_max = 220 - int(eta)
 
@@ -595,24 +630,24 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
         <div style='text-align:center;'><span style='color:#666; font-size:10px;'>WHR</span><br><b style='color:#fff; font-size:14px;'>{whr}</b></div>
     </div>
     """
-    
+
     # 3. GENERAZIONE ESERCIZI (Loop)
     for day, ex_list in dati_ai.get('tabella', {}).items():
         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
         durata = stima_durata_sessione(lista)
         workout_html += f"<h3 class='day-header'>{day.upper()} (Stimato: ~{durata} min)</h3>"
         workout_html += "<table style='width:100%'><tr style='background:#900; color:white;'><th style='width:15%'>IMG</th><th style='width:25%'>ESERCIZIO</th><th style='width:15%'>PARAMETRI</th><th style='width:45%'>COACHING CUES</th></tr>"
-        
+
         for ex in lista:
             if not isinstance(ex, dict): continue
             nome_ex = ex.get('Esercizio','N/D')
             img_search_name = nome_ex.split('(')[0].strip()
             img1, img2 = trova_img(img_search_name, df_img)
-            
+
             img_html = ""
             if img1: img_html += f"<img src='{img1}' class='ex-img'>"
             if img2: img_html += f"<img src='{img2}' class='ex-img'>"
-            
+
             sets_reps = "CARDIO" if "Cardio" in nome_ex else f"<b style='font-size:14px; color:#fff'>{ex.get('Sets','?')}</b> x <b style='font-size:14px; color:#fff'>{ex.get('Reps','?')}</b>"
             rec_tut = "N/A" if "Cardio" in nome_ex else f"Rec: {ex.get('Recupero','?')}s<br><span style='font-size:10px; color:#888'>TUT: {ex.get('TUT','?')}</span>"
 
@@ -645,7 +680,6 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     </style></head><body>
     
     <div class="header"><h1>AREA 199 LAB</h1><p style="color:#888; font-size:10px;">ATLETA: {nome.upper()} | DATA: {oggi}</p></div>
-
     <div class="box">
         <h2 style="margin-top:0;">EXECUTIVE SUMMARY</h2>
         {alert_html}
@@ -668,10 +702,8 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             </p>
         </div>
     </div>
-
     <h2>PIANO OPERATIVO</h2>
     {workout_html}
-
     <div class="box">
         <h2>STORICO PROGRESSI</h2>
         {"".join([g for g in grafici_html_list]) if grafici_html_list else "<p style='color:#666; text-align:center;'>Dati insufficienti per trend.</p>"}
@@ -713,14 +745,54 @@ else:
 if not is_coach:
     st.title("🚀 AREA 199 | Portale Atleta")
     email_login = st.text_input("Email Atleta").strip()
-    
+
     if email_login:
+        # Recupero Dati
+        dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
+        
+        if dati_row is not None:
+            # Se arriviamo qui, i dati ci sono (formato JSON corretto)
+            st.success(f"Bentornato/a, {nome_atleta}.")
         with st.spinner("Ricerca Protocollo in corso..."):
             dati_row, nome_atleta = recupera_protocollo_da_db(email_login)
-            
+
+            try:
+                # Rigenerazione DB Immagini (Gestione errore se fallisce scaricamento)
+                df_img_regen = ottieni_db_immagini()
+                
+                # Generazione HTML
+                html_rebuilt = crea_report_totale(
+                    nome=nome_atleta,
+                    dati_ai=dati_row, 
+                    grafici_html_list=[], 
+                    df_img=df_img_regen,
+                    limitazioni="Vedi Note Coach", 
+                    bf="N/D", somatotipo="N/D", whr="N/D", ffmi="N/D",
+                    eta=30 # Default sicurezza
+                )
+                
+                st.markdown("---")
+                st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
             if dati_row is not None:
                 st.success(f"Bentornato/a, {nome_atleta}. Protocollo Trovato.")
-                
+
+                # PULSANTE DI DOWNLOAD (Chiave unica per evitare conflitti)
+                st.download_button(
+                    label="📄 SCARICA SCHEDA COMPLETA (HTML)",
+                    data=html_rebuilt,
+                    file_name=f"AREA199_{nome_atleta}_{datetime.now().strftime('%d%m')}.html",
+                    mime="text/html",
+                    key="download_btn_atleta",
+                    type="primary"
+                )
+            
+            except Exception as e:
+                st.error(f"Errore durante la generazione del file: {e}")
+        
+        else:
+            # MESSAGGIO ERRORE SPECIFICO
+            st.warning("⚠️ Nessun protocollo attivo trovato per questa email.")
+            st.info("Possibili cause:\n1. Email errata.\n2. Il Coach non ha ancora salvato la scheda nel nuovo formato.\n3. Il salvataggio precedente non è andato a buon fine.")
                 # --- BLOCCO A RISCHIO: GENERAZIONE HTML ---
                 try:
                     # 1. Scaricamento Immagini
@@ -778,11 +850,11 @@ with st.sidebar:
     eta = st.number_input("Età", 18, 80, 30)
     goal = st.text_area("Obiettivo Specifico", "Ipertrofia e Ricomposizione")
     custom_instructions = st.text_area("ISTRUZIONI TATTICHE", placeholder="Es. Focus Spalle, Richiamo Glutei...")
-    
+
     st.markdown("---")
     st.header("⚠️ INFORTUNI")
     limitazioni = st.text_area("Zone da evitare", placeholder="Es. Ernia Lombare, Spalla Dx...")
-    
+
     st.markdown("---")
     st.header("⏱️ PROGRAMMAZIONE")
     is_multifreq = st.checkbox("Allenamento in MULTIFREQUENZA?", value=False)
@@ -806,15 +878,15 @@ with st.sidebar:
         caviglia = st.number_input("Caviglia (cm)", 0.0, 40.0, 22.0)
         braccio_dx = st.number_input("Braccio DX", 0.0, 60.0, 35.0)
         coscia_dx = st.number_input("Coscia DX", 0.0, 90.0, 60.0)
-    
+
     misure = { "Altezza": alt, "Peso": peso, "Collo": collo, "Vita": addome, "Addome": addome, "Fianchi": fianchi, "Polso": polso, "Caviglia": caviglia, "Torace": torace, "Braccio Dx": braccio_dx, "Braccio Sx": braccio_sx, "Coscia Dx": coscia_dx, "Coscia Sx": coscia_sx }
-    
+
     if st.button("💾 ARCHIVIA CHECK"):
         if nome:
             salva_dati_check(nome, misure)
             st.toast("Dati Archiviati.")
         else: st.error("Inserire Nome")
-    
+
     st.markdown("---")
     btn_gen = st.button("🧠 ELABORA SCHEDA")
 
@@ -823,7 +895,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     oggi = datetime.now().strftime("%d/%m/%Y")
     workout_html = ""
     alert_html = f"<div class='warning-box'>⚠️ <b>LIMITAZIONI E INFORTUNI:</b> {limitazioni}</div>" if limitazioni else ""
-    
+
     # 1. RECUPERO DATI PERSI (Logica Anti-N/D)
     meta = dati_ai.get('meta_biometria', {})
     if str(somatotipo) in ["N/D", "None", ""] and 'somato' in meta: somatotipo = meta['somato']
@@ -844,23 +916,23 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
         <div style='text-align:center;'><span style='color:#666; font-size:10px;'>WHR</span><br><b style='color:#fff; font-size:14px;'>{whr}</b></div>
     </div>
     """
-    
+
     # 3. TABELLA ESERCIZI
     for day, ex_list in dati_ai.get('tabella', {}).items():
         lista = ex_list if isinstance(ex_list, list) else ex_list.values()
         durata = stima_durata_sessione(lista)
         workout_html += f"<h3 class='day-header'>{day.upper()} (Stimato: ~{durata} min)</h3>"
         workout_html += "<table style='width:100%'><tr style='background:#900; color:white;'><th style='width:15%'>IMG</th><th style='width:25%'>ESERCIZIO</th><th style='width:15%'>PARAMETRI</th><th style='width:45%'>COACHING CUES</th></tr>"
-        
+
         for ex in lista:
             if not isinstance(ex, dict): continue
             nome_ex = ex.get('Esercizio','N/D')
             img_search_name = nome_ex.split('(')[0].strip()
             img1, img2 = trova_img(img_search_name, df_img)
-            
+
             img_html = ""
             if img1: img_html += f"<img src='{img1}' class='ex-img'>"
-            
+
             sets_reps = "CARDIO" if "Cardio" in nome_ex else f"<b style='font-size:14px; color:#fff'>{ex.get('Sets','?')}</b> x <b style='font-size:14px; color:#fff'>{ex.get('Reps','?')}</b>"
             rec_tut = "N/A" if "Cardio" in nome_ex else f"Rec: {ex.get('Recupero','?')}s<br><span style='font-size:10px; color:#888'>TUT: {ex.get('TUT','?')}</span>"
 
@@ -893,7 +965,6 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
     </style></head><body>
     
     <div class="header"><h1>AREA 199 LAB</h1><p style="color:#888; font-size:10px;">ATLETA: {nome.upper()} | DATA: {oggi}</p></div>
-
     <div class="box">
         <h2 style="margin-top:0;">EXECUTIVE SUMMARY</h2>
         {alert_html}
@@ -916,10 +987,8 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
             </p>
         </div>
     </div>
-
     <h2>PIANO OPERATIVO</h2>
     {workout_html}
-
     <div class="box">
         <h2>STORICO PROGRESSI</h2>
         {"".join([g for g in grafici_html_list]) if grafici_html_list else "<p style='color:#666; text-align:center;'>Dati insufficienti per trend.</p>"}
@@ -940,7 +1009,7 @@ def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf
 if 'last_ai' in st.session_state:
     st.markdown("---")
     st.header("📄 EXPORT & SYNC")
-    
+
     # Ricreazione Grafici
     grafici_html = []
     df_hist = leggi_storico(st.session_state.get('last_nome', ''))
@@ -972,7 +1041,7 @@ if 'last_ai' in st.session_state:
         ffmi=st.session_state.get('last_ffmi', "N/D"),
         eta=eta_val 
     )
-    
+
     # Callback Salvataggio
     def azione_invio_glide():
         mail_sicura = st.session_state.get('last_email_sicura')
@@ -1002,4 +1071,9 @@ if 'last_ai' in st.session_state:
         mime="text/html",
         use_container_width=True,
         on_click=azione_invio_glide 
-    )
+0 commit comments
+Comments
+0
+ (0)
+Please sign in to comment.
+While the code is focused, press Alt+F1 for a menu of operations.
