@@ -89,26 +89,25 @@ def ottieni_db_immagini():
 
 def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
     """
-    Salva il DNA della scheda (JSON) direttamente nel Database.
-    BYPASS DRIVE: Il 'link_drive' è fittizio, i dati sono nel 'dna_scheda'.
+    VERSIONE SBLOCCATA: Salva i dati direttamente nel foglio, ignorando Drive.
     """
-    # SERIALIZZAZIONE JSON (Il "DNA" della scheda)
+    # Serializziamo il JSON della scheda
     dna_scheda = json.dumps(dati_ai) 
 
-    # STRUTTURA RIGA (Verifica che l'ordine corrisponda alle colonne del tuo Sheet)
+    # Creiamo la riga (La colonna del link Drive riceve una stringa fittizia per non rompersi)
     nuova_riga = [
-        datetime.now().strftime("%Y-%m-%d"), # Data
-        email,                               # Email
-        nome,                                # Nome
-        dati_ai.get('mesociclo', 'N/D'),     # Fase
-        dati_ai.get('cardio_protocol', ''),  # Cardio
-        note_coach,                          # Note Coach
-        dati_ai.get('analisi_clinica', ''),  # Analisi
-        dna_scheda                           # <--- IL PAYLOAD DATI (Cruciale)
+        datetime.now().strftime("%Y-%m-%d"), 
+        email, 
+        nome, 
+        dati_ai.get('mesociclo', 'N/D'), 
+        dati_ai.get('cardio_protocol', ''), 
+        note_coach, 
+        dati_ai.get('analisi_clinica', ''), 
+        dna_scheda  # <--- Qui salviamo il "DNA" della scheda
     ]
     
     try:
-        # Usa SOLO lo scope spreadsheets se drive da problemi
+        # Usiamo solo i permessi per i Fogli (Spreadsheets) ed evitiamo Drive
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
@@ -121,7 +120,7 @@ def aggiorna_db_glide(nome, email, dati_ai, link_drive="", note_coach=""):
         sheet.append_row(nuova_riga) 
         return True
     except Exception as e:
-        st.error(f"ERRORE CRITICO DB: {e}")
+        st.error(f"ERRORE DB: {e}")
         return False
 
 def recupera_protocollo_da_db(email_target):
@@ -1003,3 +1002,4 @@ if 'last_ai' in st.session_state:
         use_container_width=True,
         on_click=azione_invio_glide 
     )
+
