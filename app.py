@@ -723,7 +723,7 @@ if not is_coach:
                 
                 st.markdown("---")
                 st.markdown("### 📥 IL TUO PROTOCOLLO È PRONTO")
-            if dati_row is not None:
+if dati_row is not None:
                 st.success(f"Bentornato/a, {nome_atleta}. Protocollo Trovato.")
 
                 # PULSANTE DI DOWNLOAD (Chiave unica per evitare conflitti)
@@ -1070,5 +1070,6 @@ if 'last_ai' in st.session_state:
         use_container_width=True,
         on_click=azione_invio_glide 
     )
+
 
 
