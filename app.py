@@ -1,53 +1,3 @@
-Skip to content
-Navigation Menu
-Platform
-Solutions
-Resources
-Open Source
-Enterprise
-Pricing
-
-Search or jump to...
-Sign in
-Sign up
-Area199
-/
-area199_lab
-Public
-Code
-Issues
-Pull requests
-Actions
-Projects
-Security
-Insights
-Commit ba649c9
-Area199
-Area199
-authored
-yesterday
-Verified
-Add files via upload
-main
-1 parent 
-4ae9aa3
- commit 
-ba649c9
-File tree
-Filter files…
-app.py
-1 file changed
-+44
--41
-lines changed
-Search within code
- 
-‎app.py‎
-+44
--41
-Lines changed: 44 additions & 41 deletions
-Original file line number	Diff line number	Diff line change
-@@ -1,1001 +1,1004 @@
 import streamlit as st
 import pandas as pd
 import os
@@ -1120,4 +1070,5 @@ if 'last_ai' in st.session_state:
         use_container_width=True,
         on_click=azione_invio_glide 
     )
+
 
