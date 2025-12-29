@@ -889,7 +889,55 @@ with st.sidebar:
 
     st.markdown("---")
     btn_gen = st.button("🧠 ELABORA SCHEDA")
+# --- INIZIO BLOCCO MANCANTE (INCOLLA QUI) ---
 
+if btn_gen:
+    # 1. Controlli Preliminari (Bloccano se mancano dati)
+    if not api_key_input:
+        st.error("❌ ERRORE: Manca la API Key. Inseriscila nel menu laterale.")
+    elif not nome:
+        st.error("❌ ERRORE: Inserire il Nome dell'atleta.")
+    else:
+        # 2. Avvio Elaborazione
+        with st.spinner("⚙️ ANALISI BIO-VETTORIALE IN CORSO... (Attendere 20s)"):
+            try:
+                # Preparazione Pacchetto Dati
+                dati_totali = {
+                    "nome": nome, "eta": eta, "sesso": sesso, "goal": goal,
+                    "misure": misure, "limitazioni": limitazioni,
+                    "giorni": giorni_allenamento, "durata_target": durata_sessione,
+                    "is_multifreq": is_multifreq, "custom_instructions": custom_instructions
+                }
+                
+                # 3. Chiamata al Cervello AI
+                res_ai = genera_protocollo_petruzzi(dati_totali, api_key_input)
+                
+                if "errore" not in res_ai:
+                    # 4. Salvataggio Risultati in Memoria
+                    st.session_state['last_ai'] = res_ai
+                    st.session_state['last_nome'] = nome
+                    st.session_state['last_limitazioni'] = limitazioni
+                    st.session_state['last_email_sicura'] = email
+                    
+                    # Calcoli Biometrici per il Report
+                    somato_str, ffmi_val, bf_val = calcola_somatotipo_scientifico(
+                        peso, alt, polso, addome, fianchi, collo, sesso
+                    )
+                    # Salviamo i calcoli
+                    st.session_state['last_bf'] = bf_val
+                    st.session_state['last_somato'] = somato_str
+                    st.session_state['last_whr'] = calcola_whr(addome, fianchi)
+                    st.session_state['last_ffmi'] = ffmi_val
+
+                    st.success("✅ PROTOCOLLO GENERATO! Scorri in basso per vedere.")
+                    st.balloons()
+                else:
+                    st.error(f"❌ Errore AI: {res_ai['errore']}")
+            
+            except Exception as e:
+                st.error(f"❌ CRASH SISTEMA: {e}")
+
+# --- FINE BLOCCO MANCANTE ---
 def crea_report_totale(nome, dati_ai, grafici_html_list, df_img, limitazioni, bf, somatotipo, whr, ffmi, eta=30):
     logo_b64 = get_base64_logo()
     oggi = datetime.now().strftime("%d/%m/%Y")
@@ -1072,3 +1120,4 @@ if 'last_ai' in st.session_state:
         use_container_width=True,
         on_click=azione_invio_glide 
     )
+
