@@ -221,7 +221,8 @@ def generate_workout(profile):
     }}
     """
     try:
-        client = openai.Client()
+        client = openai.Client(api_key=st.secrets["openai_key"])
+        
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "system", "content": prompt}],
@@ -514,3 +515,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
