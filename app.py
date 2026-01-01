@@ -36,6 +36,8 @@ st.markdown("""
         background-color: #111; color: #fff; border: 1px solid #444; border-radius: 4px;
     }
     .stSelectbox>div>div>div { background-color: #111; color: #fff; }
+    /* Slider colors */
+    .stSlider>div>div>div>div { background-color: #8b0000; }
     
     /* Buttons */
     .stButton>button {
@@ -57,6 +59,7 @@ st.markdown("""
     
     /* Expander */
     .streamlit-expanderHeader { background-color: #1a1a1a; color: white; font-weight: bold; }
+    hr { border-color: #333; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -69,11 +72,9 @@ def get_db():
     """Connessione persistente a Google Sheets."""
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        # Recupera le credenziali dai secrets
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        # Apre il file DB
         sh = client.open("AREA199_DB")
         return sh
     except Exception as e:
@@ -89,12 +90,6 @@ def get_exercise_db():
         return r.json() if r.status_code == 200 else []
     except:
         return []
-
-# Configura OpenAI
-if "openai_key" in st.secrets:
-    openai.api_key = st.secrets["openai_key"]
-else:
-    st.error("❌ Manca 'openai_key' nei secrets.")
 
 # ==============================================================================
 # 2. MOTORE MATEMATICO (HARD SCIENCE)
@@ -125,22 +120,21 @@ class ScienceEngine:
         """Logica a punteggio per Somatotipo."""
         scores = {"Ectomorfo": 0, "Mesomorfo": 0, "Endomorfo": 0}
         
-        # Rapporti
         h_wrist = height / wrist if wrist > 0 else 0
         w_h = waist / hips if hips > 0 else 0
 
-        # Ectomorfo Criteria
+        # Ectomorfo
         th_wrist = 10.4 if sex == "Uomo" else 11.0
         if h_wrist > th_wrist:
             scores["Ectomorfo"] += 2
             if ffmi < 19: scores["Ectomorfo"] += 2
 
-        # Mesomorfo Criteria
+        # Mesomorfo
         if ffmi > 20:
             scores["Mesomorfo"] += 2
             if bf < 15: scores["Mesomorfo"] += 2
 
-        # Endomorfo Criteria
+        # Endomorfo
         th_bf = 20 if sex == "Uomo" else 28
         if bf > th_bf:
             scores["Endomorfo"] += 2
@@ -149,33 +143,36 @@ class ScienceEngine:
         return max(scores, key=scores.get)
 
 # ==============================================================================
-# 3. UTILS & AI WRAPPER
+# 3. UTILS & AI WRAPPER (FIXED IMAGES & PROMPT)
 # ==============================================================================
 
-def find_image_url(name_en, db_json):
+def find_image_urls(name_en, db_json):
     """
-    Fuzzy match per trovare l'immagine. 
-    CRUCIALE: Aggiunge il Base URL di GitHub.
+    Fuzzy match per trovare le immagini.
+    Restituisce una LISTA di URL assoluti (fino a 2).
     """
-    if not name_en or not db_json: return None
+    if not name_en or not db_json: return []
     
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     
     names = [x['name'] for x in db_json]
     match = process.extractOne(name_en, names, scorer=fuzz.token_sort_ratio)
     
+    valid_urls = []
     if match and match[1] > 65: # Soglia tolleranza
         actual_name = match[0]
         for item in db_json:
             if item['name'] == actual_name:
                 imgs = item.get('images', [])
                 if imgs:
-                    # FIX: Concatena Base URL + Path Relativo
-                    return BASE_URL + imgs[0]
-    return None
+                    # Prende fino alle prime 2 immagini disponibili
+                    for img_path in imgs[:2]:
+                        valid_urls.append(BASE_URL + img_path)
+                    return valid_urls
+    return []
 
 def generate_workout(profile):
-    """Prompt Engineering per GPT-4o."""
+    """Prompt Engineering per GPT-4o - RINFORZATO SU DURATA E GIORNI."""
     prompt = f"""
     Sei il Dott. Antonio Petruzzi. Ruolo: Partner tecnico d'élite AREA 199.
     Tono: Hard Science, Severo, Tecnico, Brutale. Usa il TU.
@@ -184,43 +181,48 @@ def generate_workout(profile):
     - Nome: {profile['nome']}
     - Somatotipo: {profile['soma']} (BF: {profile['bf']}%, FFMI: {profile['ffmi']})
     - Obiettivi: {profile['goals']}
-    - Infortuni: {profile['inf']} (ESCLUDI TASSATIVAMENTE ESERCIZI CHE COINVOLGONO QUESTE PARTI)
-    - Logistica: {profile['days']} giorni/sett, {profile['min']} min.
+    - Infortuni: {profile['inf']} (ESCLUDI TASSATIVAMENTE ESERCIZI SU QUESTE PARTI)
+    - Logistica: {profile['days']} giorni/sett, {profile['min']} min/seduta.
     
-    LOGICA SCIENTIFICA SOMATOTIPO:
-    1. Ectomorfo: Focus Tensione Meccanica. Recuperi ampi (90-120s). Volume moderato. NO Drop set.
+    LOGICA SOMATOTIPO (Cruciale):
+    1. Ectomorfo: Focus Tensione Meccanica. Recuperi lunghi. Volume moderato. NO Drop set.
     2. Endomorfo: Focus Stress Metabolico. Alta densità. Recuperi brevi (<60s). Superserie/Circuiti.
     3. Mesomorfo: Alto Volume. Tecniche d'intensità permesse.
     
+    VINCOLI STRUTTURALI (TASSATIVI):
+    1. GIORNI: Devi generare ESATTAMENTE {profile['days']} routine di allenamento distinte.
+    2. DURATA: Stima il tempo totale (Sets x (Reps stimated time + Rest)). Il volume totale per giorno NON DEVE SUPERARE i {profile['min']} minuti indicati. Taglia il volume se necessario.
+    
     LOGICA SETTIMANALE:
-    Se 3 giorni -> Push/Pull/Legs o Full Body (a tua discrezione tecnica).
-    Se 4 giorni -> Upper/Lower.
+    - 3gg: Full Body o Push/Pull/Legs.
+    - 4gg: Upper/Lower x2.
     
     LOGICA CARDIO:
-    Se Ciclismo -> Usa %FTP (Es: "20 min @ 90% FTP"). MAI Zone Z1/Z2 generiche.
-    Altrimenti -> Frequenza Cardiaca.
+    - Se Ciclismo: USA SOLO %FTP. MAI Zone generiche.
+    - Altrimenti: Frequenza Cardiaca.
     
     OUTPUT RICHIESTO (JSON RIGIDO):
     {{
-        "analisi_clinica": "Analisi spietata dello stato fisico e strategia adottata.",
-        "note_tecniche": "Istruzioni esecutive stringenti.",
-        "protocollo_cardio": "Protocollo dettagliato.",
+        "analisi_clinica": "Analisi spietata...",
+        "note_tecniche": "Istruzioni esecutive...",
+        "protocollo_cardio": "Protocollo dettagliato...",
         "tabella": {{
             "Giorno 1 - [Focus]": [
                 {{
-                    "nome_it": "Nome Italiano",
-                    "nome_en": "Standard English Name (per ricerca immagini)",
-                    "sets": "4",
-                    "reps": "8-10",
-                    "tut": "3-0-1-0",
-                    "rest": "90s",
-                    "note": "Cue tecnico rapido"
-                }}
+                    "nome_it": "...", "nome_en": "Standard English Name",
+                    "sets": "...", "reps": "...", "tut": "xxxx", "rest": "...s", "note": "..."
+                }},
+                ...altri esercizi per G1
+            ],
+             "Giorno 2 - [Focus]": [
+                ...esercizi per G2
             ]
+            ...e così via per ESATTAMENTE {profile['days']} giorni.
         }}
     }}
     """
     try:
+        # Passaggio esplicito api_key dai secrets
         client = openai.Client(api_key=st.secrets["openai_key"])
         
         response = client.chat.completions.create(
@@ -231,17 +233,15 @@ def generate_workout(profile):
         )
         return json.loads(response.choices[0].message.content)
     except Exception as e:
-        st.error(f"Errore AI: {e}")
+        st.error(f"Errore AI Generation: {e}")
         return None
 
 # ==============================================================================
-# 4. UI COMPONENTS (RENDERER UNICO)
+# 4. UI COMPONENTS (RENDERER UNICO FIX IMAGES)
 # ==============================================================================
 
 def render_dashboard(data_json, meta, history_df=None):
-    """
-    Visualizza la scheda. Usato sia dall'Atleta che dall'Admin in preview.
-    """
+    """Visualizza la scheda. Gestisce immagini multiple."""
     # HEADER
     st.markdown(f"## 🧬 PROTOCOLLO: {meta.get('mesociclo', 'N/A')}")
     col_h1, col_h2 = st.columns(2)
@@ -264,7 +264,7 @@ def render_dashboard(data_json, meta, history_df=None):
         <div class="report-card">
             <h4>🚴 PROTOCOLLO CARDIO & NOTE</h4>
             <p><b>CARDIO:</b> {data_json.get('protocollo_cardio', 'N/A')}</p>
-            <hr style="border-color:#333;">
+            <hr>
             <p><b>NOTE:</b> {data_json.get('note_tecniche', 'N/A')}</p>
         </div>
         """, unsafe_allow_html=True)
@@ -273,30 +273,36 @@ def render_dashboard(data_json, meta, history_df=None):
     ex_db = get_exercise_db()
     schedule = data_json.get('tabella', {})
     
+    if not schedule:
+        st.warning("Nessuna tabella di allenamento generata nel JSON.")
+        return
+
     for day, exercises in schedule.items():
         with st.expander(f"🔴 {day}", expanded=True):
             for ex in exercises:
                 ec1, ec2 = st.columns([1, 3])
                 
-                # Immagine
+                # Immagini (Gestione Multipla)
                 with ec1:
-                    img_url = find_image_url(ex.get('nome_en'), ex_db)
-                    if img_url:
-                        st.image(img_url, use_container_width=True)
+                    img_urls = find_image_urls(ex.get('nome_en'), ex_db)
+                    if img_urls:
+                        # Streamlit accetta una lista di URL e li mostra impilati
+                        st.image(img_urls, use_container_width=True)
                     else:
-                        st.markdown(f"<div style='height:100px; background:#111; display:flex; align-items:center; justify-content:center; color:#555;'>NO IMAGE</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='height:100px; background:#111; display:flex; align-items:center; justify-content:center; color:#555; font-size:0.8em;'>NO IMAGE</div>", unsafe_allow_html=True)
                 
-                # Dati
+                # Dati Esercizio
                 with ec2:
                     st.markdown(f"### {ex.get('nome_it', 'Esercizio')}")
-                    st.markdown(f"*{ex.get('nome_en', '')}*")
+                    if ex.get('nome_en'):
+                        st.caption(f"EN: *{ex.get('nome_en')}*")
                     
                     # Griglia dati tecnici
                     gc1, gc2, gc3, gc4 = st.columns(4)
-                    gc1.markdown(f"**SETS:** {ex.get('sets')}")
-                    gc2.markdown(f"**REPS:** {ex.get('reps')}")
-                    gc3.markdown(f"**TUT:** {ex.get('tut')}")
-                    gc4.markdown(f"**REST:** {ex.get('rest')}")
+                    gc1.markdown(f"**SETS:** {ex.get('sets', '-')}")
+                    gc2.markdown(f"**REPS:** {ex.get('reps', '-')}")
+                    gc3.markdown(f"**TUT:** {ex.get('tut', '-')}")
+                    gc4.markdown(f"**REST:** {ex.get('rest', '-')}")
                     
                     if ex.get('note'):
                         st.info(f"💡 {ex['note']}")
@@ -306,25 +312,26 @@ def render_dashboard(data_json, meta, history_df=None):
     if history_df is not None and not history_df.empty:
         st.markdown("## 📈 TREND ANALYSIS")
         
-        # Pulizia dati
         cols_num = ['Peso', 'Vita', 'Braccio Dx', 'Braccio Sx', 'Coscia Dx', 'Coscia Sx']
         for c in cols_num:
-            history_df[c] = pd.to_numeric(history_df[c], errors='coerce')
+            # Gestione errori conversione e riempimento NaN
+            history_df[c] = pd.to_numeric(history_df[c], errors='coerce').fillna(0)
         
         # Grafico 1: Peso vs Vita
         fig1 = make_subplots(specs=[[{"secondary_y": True}]])
         fig1.add_trace(go.Scatter(x=history_df['Data'], y=history_df['Peso'], name="Peso (kg)", line=dict(color='#ff0000', width=3)), secondary_y=False)
         fig1.add_trace(go.Scatter(x=history_df['Data'], y=history_df['Vita'], name="Vita (cm)", line=dict(color='#cccccc', dash='dot')), secondary_y=True)
-        fig1.update_layout(title="Composizione Corporea", template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        fig1.update_layout(title="Composizione Corporea", template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
         st.plotly_chart(fig1, use_container_width=True)
         
-        # Grafico 2: Simmetrie (Ultima rilevazione)
-        last = history_df.iloc[-1]
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(x=['Braccia', 'Cosce'], y=[last['Braccio Sx'], last['Coscia Sx']], name='Sinistra', marker_color='#cc0000'))
-        fig2.add_trace(go.Bar(x=['Braccia', 'Cosce'], y=[last['Braccio Dx'], last['Coscia Dx']], name='Destra', marker_color='#333333'))
-        fig2.update_layout(title="Analisi Simmetria (Dx vs Sx)", template="plotly_dark", barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig2, use_container_width=True)
+        # Grafico 2: Simmetrie (Ultima rilevazione valida)
+        if len(history_df) > 0:
+            last = history_df.iloc[-1]
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(x=['Braccia', 'Cosce'], y=[last['Braccio Sx'], last['Coscia Sx']], name='Sinistra', marker_color='#cc0000'))
+            fig2.add_trace(go.Bar(x=['Braccia', 'Cosce'], y=[last['Braccio Dx'], last['Coscia Dx']], name='Destra', marker_color='#333333'))
+            fig2.update_layout(title=f"Analisi Simmetria (Check del {last['Data']})", template="plotly_dark", barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig2, use_container_width=True)
 
 # ==============================================================================
 # 5. MAIN APP FLOW
@@ -334,7 +341,7 @@ def main():
     # Sidebar Login
     with st.sidebar:
         try:
-            st.image("assets/logo.png", width=150)
+            st.image("assets/logo.png", use_container_width=True)
         except:
             st.title("AREA 199")
             
@@ -342,7 +349,8 @@ def main():
         role = st.selectbox("Identità", ["-", "Coach Admin", "Atleta"])
         pwd = st.text_input("Password", type="password")
         
-        db = get_db() # Connette al DB
+        if role != "-":
+            db = get_db() # Connette al DB solo se si tenta login
 
     # --------------------------------------------------------------------------
     # FLUSSO COACH
@@ -399,11 +407,12 @@ def main():
 
             with st.expander("2. PARAMETRI CLINICI & LOGISTICA", expanded=True):
                 k1, k2 = st.columns(2)
+                # Multifrequenza rimosso come input diretto, gestito dalla logica giorni dell'AI
                 giorni = k1.multiselect("Giorni", ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"], ["Lun", "Mer", "Ven"])
-                durata = k1.slider("Durata (min)", 30, 120, 60)
+                durata = k1.slider("Durata Seduta (min)", 30, 150, 60, step=5)
                 
-                obiettivi = k2.multiselect("Obiettivi", ["Ipertrofia", "Dimagrimento", "Forza", "Ricomposizione"])
-                infortuni = k2.text_area("Limitazioni / Infortuni", "Nessuna")
+                obiettivi = k2.multiselect("Obiettivi", ["Ipertrofia", "Dimagrimento", "Forza", "Ricomposizione", "Pre-Season"])
+                infortuni = k2.text_area("Limitazioni / Infortuni (Cruciale)", "Nessuna")
             
             # --- CALCOLO MOTORE ---
             bf = ScienceEngine.calc_bf_navy(sesso, vita, collo, alt, fianchi)
@@ -414,8 +423,8 @@ def main():
             
             # --- GENERAZIONE ---
             if st.button("🚀 GENERA PROTOCOLLO (AI)"):
-                if not nome:
-                    st.error("Nome mancante.")
+                if not nome or len(giorni) == 0:
+                    st.error("Nome e almeno un giorno di allenamento sono obbligatori.")
                 else:
                     with st.spinner("Elaborazione Dott. Petruzzi in corso..."):
                         prof = {
@@ -448,7 +457,7 @@ def main():
                     try:
                         sheet1 = db.sheet1 # Default sheet
                         meta = st.session_state['temp_meta']
-                        # Struttura Colonne: Data, Email, Nome, Mesociclo, Target_Cardio, Note, Analisi, JSON
+                        # Struttura: Data, Email, Nome, Mesociclo, Target_Cardio, Note, Analisi, JSON
                         row_data = [
                             datetime.now().strftime("%Y-%m-%d"),
                             meta['email'], meta['nome'], meta['mesociclo'],
@@ -456,10 +465,16 @@ def main():
                             json.dumps(st.session_state['temp_workout'])
                         ]
                         sheet1.append_row(row_data)
-                        st.success("PROTOCOLLO ATTIVATO E INVIATO ALL'ATLETA.")
+                        st.success(f"PROTOCOLLO PER {meta['nome'].upper()} ATTIVATO.")
                         del st.session_state['temp_workout'] # Reset
+                        del st.session_state['temp_meta']
                     except Exception as e:
                         st.error(f"Errore DB: {e}")
+
+        with tab_db:
+            st.markdown("### VISUALIZZAZIONE DATI GREZZI (DEBUG)")
+            if st.button("Aggiorna DB View"):
+                st.dataframe(pd.DataFrame(db.sheet1.get_all_records()))
 
     # --------------------------------------------------------------------------
     # FLUSSO ATLETA
@@ -474,8 +489,8 @@ def main():
                     # Fetch Scheda (Sheet 1)
                     sheet1 = db.sheet1
                     all_recs = sheet1.get_all_records()
-                    # Filtro case-insensitive
-                    my_recs = [r for r in all_recs if str(r['Email_Cliente']).strip().lower() == u_email.strip().lower()]
+                    # Filtro case-insensitive preciso
+                    my_recs = [r for r in all_recs if str(r.get('Email_Cliente')).strip().lower() == u_email.strip().lower()]
                     
                     if not my_recs:
                         st.error("Nessun protocollo attivo trovato per questa email.")
@@ -486,22 +501,25 @@ def main():
                         try:
                             w_json = json.loads(last_rec['Link_Scheda'])
                         except:
-                            st.error("Errore formattazione dati scheda.")
+                            st.error("Errore critico nel formato dati della scheda salvata.")
                             st.stop()
                             
                         # Fetch Storico per Grafici (Sheet 2)
                         sheet2 = db.worksheet("Storico_Misure")
                         all_hist = sheet2.get_all_records()
-                        df_hist = pd.DataFrame([r for r in all_hist if r['Nome'] == last_rec['Nome']])
+                        # Filtra storico per nome atleta
+                        df_hist = pd.DataFrame([r for r in all_hist if r.get('Nome') == last_rec['Nome']])
                         
                         # Metadata per rendering
                         meta_info = {
-                            "nome": last_rec['Nome'],
-                            "mesociclo": last_rec['Mesociclo'],
-                            "somatotipo": "Calcolato", # Non salvato esplicitamente in Sheet 1, ma ok
-                            "target_cardio": last_rec['Target_Cardio'],
-                            "note_tecniche": last_rec['Note_Tecniche'],
-                            "analisi_clinica": last_rec['Analisi_Clinica']
+                            "nome": last_rec.get('Nome'),
+                            "mesociclo": last_rec.get('Mesociclo'),
+                            # Somatotipo non è salvato nel foglio 1, lo omettiamo o lo ricalcoliamo se necessario.
+                            # Per ora mostriamo quello che c'è.
+                            "somatotipo": "Clinical Defined", 
+                            "target_cardio": last_rec.get('Target_Cardio'),
+                            "note_tecniche": last_rec.get('Note_Tecniche'),
+                            "analisi_clinica": last_rec.get('Analisi_Clinica')
                         }
                         
                         # RENDERIZZA TUTTO
@@ -515,4 +533,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
