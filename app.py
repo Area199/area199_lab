@@ -204,7 +204,7 @@ def generate_workout(profile):
     OUTPUT RICHIESTO (JSON RIGIDO):
     {{
         "analisi_clinica": "Analisi spietata...",
-        "note_tecniche": "Istruzioni esecutive...",
+        "note_tecniche": "Istruzioni esecutive descrizione di un minitutorial di esecuzione",
         "protocollo_cardio": "Protocollo dettagliato...",
         "tabella": {{
             "Giorno 1 - [Focus]": [
@@ -533,3 +533,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
