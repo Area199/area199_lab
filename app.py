@@ -172,58 +172,63 @@ def find_image_urls(name_en, db_json):
     return []
 
 def generate_workout(profile):
-    """Prompt Engineering per GPT-4o - RINFORZATO SU DURATA E GIORNI."""
+    """Prompt Engineering AGGIORNATO: Logica Volume Rigida + Tutorial."""
+    
+    # Calcolo dinamico del numero minimo di esercizi basato sulla durata
+    min_exercises = 4
+    if profile['min'] >= 90:
+        min_exercises = 8
+    elif profile['min'] >= 60:
+        min_exercises = 6
+    elif profile['min'] >= 45:
+        min_exercises = 5
+        
     prompt = f"""
     Sei il Dott. Antonio Petruzzi. Ruolo: Partner tecnico d'élite AREA 199.
-    Tono: Hard Science, Severo, Tecnico, Brutale. Usa il TU.
+    Tono: Hard Science, Severo, Tecnico.
     
     PROFILO ATLETA:
     - Nome: {profile['nome']}
     - Somatotipo: {profile['soma']} (BF: {profile['bf']}%, FFMI: {profile['ffmi']})
     - Obiettivi: {profile['goals']}
-    - Infortuni: {profile['inf']} (ESCLUDI TASSATIVAMENTE ESERCIZI SU QUESTE PARTI)
+    - Infortuni: {profile['inf']} (ESCLUDI TASSATIVAMENTE QUESTE PARTI)
     - Logistica: {profile['days']} giorni/sett, {profile['min']} min/seduta.
     
-    LOGICA SOMATOTIPO (Cruciale):
-    1. Ectomorfo: Focus Tensione Meccanica. Recuperi lunghi. Volume moderato. NO Drop set.
-    2. Endomorfo: Focus Stress Metabolico. Alta densità. Recuperi brevi (<60s). Superserie/Circuiti.
+    REGOLA FERREA SUL VOLUME (Time-Filling Logic):
+    L'atleta DEVE allenarsi per {profile['min']} minuti reali.
+    Per riempire questo tempo, DEVI prescrivere ALMENO {min_exercises} ESERCIZI per ogni seduta.
+    Se metti meno di {min_exercises} esercizi, il protocollo sarà RIFIUTATO.
+    
+    LOGICA SOMATOTIPO:
+    1. Ectomorfo: Focus Tensione Meccanica. Recuperi ampi. NO Drop set.
+    2. Endomorfo: Focus Stress Metabolico. Alta densità. Recuperi brevi (<60s).
     3. Mesomorfo: Alto Volume. Tecniche d'intensità permesse.
     
-    VINCOLI STRUTTURALI (TASSATIVI):
-    1. GIORNI: Devi generare ESATTAMENTE {profile['days']} routine di allenamento distinte.
-    2. DURATA: Stima il tempo totale (Sets x (Reps stimated time + Rest)). Il volume totale per giorno DEVE ESSERE CIRCA i {profile['min']} minuti indicati.
-    - 3gg: Full Body o Push/Pull/Legs.
-    - 4gg: Upper/Lower x2.
-    
-    LOGICA CARDIO:
-    - Se Ciclismo: USA SOLO %FTP. MAI Zone generiche.
-    - Altrimenti: Frequenza Cardiaca.
-    - indica la frequesnza cardiaca targhete considerando eta'/220
-    
-    OUTPUT RICHIESTO (JSON RIGIDO):
+    OUTPUT JSON RIGIDO:
     {{
-        "analisi_clinica": "Analisi spietata...",
-        "note_tecniche": "Istruzioni esecutive ed ESAUSTIVE descrizione di un minitutorial di esecuzione",
-        "protocollo_cardio": "Protocollo dettagliato...",
+        "analisi_clinica": "Analisi...",
+        "note_tecniche": "Note...",
+        "protocollo_cardio": "Dettagli...",
         "tabella": {{
             "Giorno 1 - [Focus]": [
                 {{
-                    "nome_it": "...", "nome_en": "Standard English Name",
-                    "sets": "...", "reps": "...", "tut": "xxxx", "rest": "...s", "note": "..."
+                    "nome_it": "Nome Italiano",
+                    "nome_en": "Standard English Name",
+                    "tutorial": "Minitutorial tecnico lampo (max 15 parole). Es: 'Gomiti stretti, picco contrazione 1s, scendi in 3s'.",
+                    "sets": "4",
+                    "reps": "8-10",
+                    "tut": "3-0-1-0",
+                    "rest": "90s",
+                    "note": "Cue tecnico rapido"
                 }},
-                ...altri esercizi per G1
+                ... (Inserire almeno {min_exercises} esercizi qui)
             ],
-             "Giorno 2 - [Focus]": [
-                ...esercizi per G2
-            ]
-            ...e così via per ESATTAMENTE {profile['days']} giorni.
+            ... (Ripetere per tutti i {profile['days']} giorni)
         }}
     }}
     """
     try:
-        # Passaggio esplicito api_key dai secrets
         client = openai.Client(api_key=st.secrets["openai_key"])
-        
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "system", "content": prompt}],
@@ -240,7 +245,7 @@ def generate_workout(profile):
 # ==============================================================================
 
 def render_dashboard(data_json, meta, history_df=None):
-    """Visualizza la scheda. Gestisce immagini multiple."""
+    """Visualizza la scheda con Tutorial e Immagini."""
     # HEADER
     st.markdown(f"## 🧬 PROTOCOLLO: {meta.get('mesociclo', 'N/A')}")
     col_h1, col_h2 = st.columns(2)
@@ -273,13 +278,14 @@ def render_dashboard(data_json, meta, history_df=None):
     schedule = data_json.get('tabella', {})
     
     if not schedule:
-        st.warning("Nessuna tabella di allenamento generata nel JSON.")
+        st.warning("Nessuna tabella generata.")
         return
 
     for day, exercises in schedule.items():
         with st.expander(f"🔴 {day}", expanded=True):
             for ex in exercises:
                 ec1, ec2 = st.columns([1, 3])
+                
                 
                 # Immagini (Gestione Multipla)
                 with ec1:
@@ -532,6 +538,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
