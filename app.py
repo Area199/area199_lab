@@ -214,12 +214,12 @@ def generate_workout(profile):
                 {{
                     "nome_it": "Nome Italiano",
                     "nome_en": "Standard English Name",
-                    "tutorial": "Minitutorial tecnico lampo (max 15 parole). Es: 'Gomiti stretti, picco contrazione 1s, scendi in 3s'.",
+                    "tutorial": "Minitutorial tecnico. Es: 'Gomiti stretti, picco contrazione 1s, scendi in 3s'.",
                     "sets": "4",
                     "reps": "8-10",
                     "tut": "3-0-1-0",
                     "rest": "90s",
-                    "note": "Cue tecnico rapido"
+                    "note": "Cue tecnico"
                 }},
                 ... (Inserire almeno {min_exercises} esercizi qui)
             ],
@@ -538,6 +538,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
