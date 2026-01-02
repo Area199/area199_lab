@@ -191,7 +191,7 @@ def generate_workout(profile):
     
     VINCOLI STRUTTURALI (TASSATIVI):
     1. GIORNI: Devi generare ESATTAMENTE {profile['days']} routine di allenamento distinte.
-    2. DURATA: Stima il tempo totale (Sets x (Reps stimated time + Rest)). Il volume totale per giorno NON DEVE SUPERARE i {profile['min']} minuti indicati. Taglia il volume se necessario.
+    2. DURATA: Stima il tempo totale (Sets x (Reps stimated time + Rest)). Il volume totale per giorno DEVE ESSERE CIRCA i {profile['min']} minuti indicati. Taglia il volume se necessario o aggiungi se ncessario
     
     LOGICA SETTIMANALE:
     - 3gg: Full Body o Push/Pull/Legs.
@@ -200,11 +200,12 @@ def generate_workout(profile):
     LOGICA CARDIO:
     - Se Ciclismo: USA SOLO %FTP. MAI Zone generiche.
     - Altrimenti: Frequenza Cardiaca.
+    - indica la frequesnza cardiaca targhete considerando eta'/220
     
     OUTPUT RICHIESTO (JSON RIGIDO):
     {{
         "analisi_clinica": "Analisi spietata...",
-        "note_tecniche": "Istruzioni esecutive descrizione di un minitutorial di esecuzione",
+        "note_tecniche": "Istruzioni esecutive ed ESAUSTIVE descrizione di un minitutorial di esecuzione",
         "protocollo_cardio": "Protocollo dettagliato...",
         "tabella": {{
             "Giorno 1 - [Focus]": [
@@ -533,4 +534,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
