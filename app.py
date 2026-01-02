@@ -191,9 +191,7 @@ def generate_workout(profile):
     
     VINCOLI STRUTTURALI (TASSATIVI):
     1. GIORNI: Devi generare ESATTAMENTE {profile['days']} routine di allenamento distinte.
-    2. DURATA: Stima il tempo totale (Sets x (Reps stimated time + Rest)). Il volume totale per giorno DEVE ESSERE CIRCA i {profile['min']} minuti indicati. Taglia il volume se necessario o aggiungi se ncessario
-    
-    LOGICA SETTIMANALE:
+    2. DURATA: Stima il tempo totale (Sets x (Reps stimated time + Rest)). Il volume totale per giorno DEVE ESSERE CIRCA i {profile['min']} minuti indicati.
     - 3gg: Full Body o Push/Pull/Legs.
     - 4gg: Upper/Lower x2.
     
@@ -534,5 +532,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
