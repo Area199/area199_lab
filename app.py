@@ -172,7 +172,7 @@ def extract_data_full(row, tipo):
 
 def main():
     st.sidebar.image("https://via.placeholder.com/150x50/000000/E20613?text=AREA199", use_container_width=True)
-    st.sidebar.title("AREA 199 v3.0")
+    st.sidebar.title("AREA 199 v3.1")
     
     role = st.sidebar.radio("MODALITÀ", ["Coach Admin", "Atleta"])
     pwd = st.sidebar.text_input("Password", type="password")
@@ -321,10 +321,7 @@ def main():
                                 c1, c2 = st.columns([1,3])
                                 if ex.get('images'): 
                                     c1.image(ex['images'][0])
-                                    if len(ex['images']) > 1: 
-
-[Image of Barbell Bench Press]
-c1.image(ex['images'][1])
+                                    if len(ex['images']) > 1: c1.image(ex['images'][1])
                                 c2.write(f"**{ex['ex']}** - {ex['sets']}x{ex['reps']}")
                                 c2.caption(ex.get('note'))
                 else: st.warning("Nessuna scheda")
