@@ -1,334 +1,241 @@
 import streamlit as st
 import pandas as pd
-import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import openai
-from datetime import datetime
+import json
 import re
+from datetime import datetime
+import openai
 
 # ==============================================================================
-# CONFIGURAZIONE PAGINA
+# CONFIGURAZIONE
 # ==============================================================================
-st.set_page_config(page_title="AREA 199 | FULL DATA", layout="wide")
+st.set_page_config(page_title="AREA 199 | DEBUGGER", layout="wide")
 st.markdown("""
 <style>
     .stApp { background-color: #000000; color: #ffffff; }
-    input, textarea, select { background-color: #1a1a1a !important; color: white !important; border: 1px solid #333 !important; }
+    input, textarea { background-color: #111 !important; color: white !important; border: 1px solid #444 !important; }
     h1, h2, h3 { color: #E20613 !important; }
-    .stButton>button { border: 1px solid #E20613; color: #E20613; width: 100%; }
-    .stButton>button:hover { background: #E20613; color: white; }
-    .field-label { color: #888; font-size: 0.8em; margin-bottom: 0px; }
+    .stButton>button { border: 2px solid #E20613; color: #E20613; width: 100%; font-weight: bold; }
+    .debug-box { font-family: monospace; font-size: 0.8em; color: #00ff00; background: #002200; padding: 5px; margin-bottom: 2px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. IL "RISOLUTORE" DEI NOMI COLONNA (CORE LOGIC)
+# 1. MOTORE DI RICERCA "FUZZY" (IL SEGRETO)
 # ==============================================================================
 
-def normalize_key(key):
-    """Rimuove caratteri speciali per facilitare il match."""
-    return re.sub(r'[^a-zA-Z0-9]', '', str(key).lower())
+def normalize_text(text):
+    """Rimuove tutto ciò che non è una lettera o un numero e rende minuscolo"""
+    if not isinstance(text, str): return str(text)
+    return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
 
-def get_col_value(row, target_names, is_number=False):
+def find_value_in_row(row, keywords):
     """
-    Cerca il valore nella riga controllando varie versioni del nome colonna.
+    Scansiona TUTTE le colonne della riga. 
+    Se il nome della colonna contiene una delle keywords, restituisce il valore.
     """
-    row_keys_normalized = {normalize_key(k): k for k in row.keys()}
+    # 1. Normalizziamo le chiavi della riga (nomi colonne reali)
+    row_normalized = {normalize_text(k): k for k in row.keys()}
     
-    for target in target_names:
-        # 1. Prova match esatto
-        if target in row:
-            val = row[target]
-            if is_number: return clean_number(val)
-            return str(val).strip()
-            
-        # 2. Prova match normalizzato (ignora spazi, maiuscole e punteggiatura)
-        norm_target = normalize_key(target)
-        if norm_target in row_keys_normalized:
-            real_key = row_keys_normalized[norm_target]
-            val = row[real_key]
-            if is_number: return clean_number(val)
-            return str(val).strip()
-            
-    return 0.0 if is_number else ""
+    # 2. Cerchiamo le keywords
+    for kw in keywords:
+        kw_norm = normalize_text(kw)
+        # Cerca match parziale (es. "peso" dentro "domanda3_qual_e_il_peso_kg")
+        for col_norm_name, real_col_name in row_normalized.items():
+            if kw_norm in col_norm_name:
+                val = row[real_col_name]
+                if str(val).strip() != "": # Se non è vuoto, abbiamo vinto
+                    return val
+    return ""
 
-def clean_number(val):
+def clean_num(val):
+    """Pulisce numeri sporchi es '75 kg' -> 75.0"""
     if not val: return 0.0
-    s = str(val).replace(',', '.').replace('kg', '').replace('cm', '').strip()
-    try:
-        return float(re.search(r"[-+]?\d*\.\d+|\d+", s).group())
-    except:
-        return 0.0
+    s = str(val).replace(',', '.')
+    match = re.search(r"[-+]?\d*\.\d+|\d+", s)
+    return float(match.group()) if match else 0.0
 
-def aggregate_days(row):
-    """Tally a volte separa i giorni in colonne diverse. Li riuniamo."""
-    days = []
-    keywords = ["Lunedi", "Martedi", "Mercoledi", "Giovedi", "Venerdi", "Sabato", "Domenica"]
+# ==============================================================================
+# 2. ESTRAZIONE DATI (PROFILO COMPLETO)
+# ==============================================================================
+
+def extract_data(row, tipo):
+    d = {}
     
-    # Cerca nelle chiavi se contengono "Giorni disponibili" E il nome del giorno
+    # ANAGRAFICA
+    d['nome'] = find_value_in_row(row, ['nome', 'name'])
+    d['cognome'] = find_value_in_row(row, ['cognome', 'surname'])
+    d['email'] = find_value_in_row(row, ['email', 'e-mail'])
+    d['data_nascita'] = find_value_in_row(row, ['nascita', 'birth'])
+    d['cf'] = find_value_in_row(row, ['codicefiscale', 'taxid'])
+    
+    # MISURE (Keywords univoche per evitare errori)
+    d['peso'] = clean_num(find_value_in_row(row, ['pesokg', 'weight']))
+    d['altezza'] = clean_num(find_value_in_row(row, ['altezza', 'height']))
+    
+    d['collo'] = clean_num(find_value_in_row(row, ['collo', 'neck']))
+    d['torace'] = clean_num(find_value_in_row(row, ['torace', 'chest']))
+    d['addome'] = clean_num(find_value_in_row(row, ['addome', 'vita', 'waist']))
+    d['fianchi'] = clean_num(find_value_in_row(row, ['fianchi', 'hips']))
+    
+    # ARTI (Dx/Sx) - Usiamo keyword combinate
+    # Nota: la funzione find cerca match parziali. "bracciodx" troverà "Braccio Dx cm"
+    d['br_dx'] = clean_num(find_value_in_row(row, ['bracciodx', 'rightarm']))
+    d['br_sx'] = clean_num(find_value_in_row(row, ['bracciosx', 'leftarm']))
+    d['av_dx'] = clean_num(find_value_in_row(row, ['avambracciodx', 'forearmr']))
+    d['av_sx'] = clean_num(find_value_in_row(row, ['avambracciosx', 'forearml']))
+    
+    d['cg_dx'] = clean_num(find_value_in_row(row, ['cosciadx', 'thighr']))
+    d['cg_sx'] = clean_num(find_value_in_row(row, ['cosciasx', 'thighl']))
+    d['pl_dx'] = clean_num(find_value_in_row(row, ['polpacciodx', 'calfr']))
+    d['pl_sx'] = clean_num(find_value_in_row(row, ['polpacciosx', 'calfl']))
+    d['caviglia'] = clean_num(find_value_in_row(row, ['caviglia', 'ankle']))
+
+    # LOGISTICA
+    d['obiettivi'] = find_value_in_row(row, ['obiettivi', 'goals', 'target'])
+    d['durata'] = clean_num(find_value_in_row(row, ['minuti', 'sessione', 'tempo']))
+    d['fasce'] = find_value_in_row(row, ['fasce', 'orarie', 'limitazioni'])
+    
+    # GIORNI (Logica speciale: cerca tutte le colonne che contengono nomi di giorni)
+    days_found = []
     for k, v in row.items():
-        if "Giorni disponibili" in k and v:
-            # Se la cella non è vuota, controlliamo quale giorno è
-            for day in keywords:
-                if day.lower() in k.lower() or day.lower() in str(v).lower():
-                    if day not in days: days.append(day)
-    
-    return ", ".join(days) if days else "Non specificato"
+        if v and any(x in str(v).lower() for x in ['luned', 'marted', 'mercoled', 'gioved', 'venerd', 'sabato', 'domenica']):
+             # Spesso Tally mette il giorno nel valore (es. Colonna: Giorno1 -> Valore: Lunedi)
+             days_found.append(str(v))
+        elif 'giorn' in k.lower() and v:
+             # O nel nome colonna
+             days_found.append(str(v))
+    d['giorni'] = ", ".join(list(set(days_found))) if days_found else ""
+
+    # CLINICA (Specifici per tipo)
+    if tipo == "ANAMNESI":
+        d['farmaci'] = find_value_in_row(row, ['farmaci', 'terapie'])
+        d['disfunzioni'] = find_value_in_row(row, ['disfunzioni', 'patomeccaniche'])
+        d['overuse'] = find_value_in_row(row, ['overuse', 'meccanopatica'])
+        d['limitazioni'] = find_value_in_row(row, ['compensi', 'limitazioni'])
+        d['sport'] = find_value_in_row(row, ['sport', 'pratica'])
+        d['integrazione'] = find_value_in_row(row, ['integrazione'])
+        d['allergie'] = find_value_in_row(row, ['allergie', 'intolleranze'])
+        # Placeholder vuoti checkup
+        d['stress'] = ""
+        d['nuovi_sintomi'] = ""
+    else:
+        d['nuovi_sintomi'] = find_value_in_row(row, ['nuovi', 'sintomi'])
+        d['stress'] = find_value_in_row(row, ['stress', 'recupero'])
+        d['aderenza'] = find_value_in_row(row, ['aderenza'])
+        d['feedback_forza'] = find_value_in_row(row, ['forza', 'resistenza'])
+        # Placeholder vuoti anamnesi
+        d['farmaci'] = ""
+        d['disfunzioni'] = ""
+        d['overuse'] = ""
+        d['limitazioni'] = ""
+        d['integrazione'] = ""
+        d['allergie'] = ""
+        d['sport'] = ""
+
+    return d
 
 # ==============================================================================
-# 2. ESTRAZIONE DATI (MAPPA 1:1 CON LA TUA LISTA)
-# ==============================================================================
-
-def extract_full_profile(row, source_type):
-    data = {}
-    
-    # --- ANAGRAFICA ---
-    data['nome'] = get_col_value(row, ["Nome", "NomeCognome"]) # A volte Tally unisce
-    if not data['nome']: data['nome'] = get_col_value(row, ["Nome", "Name"]) # Fallback
-    
-    data['cognome'] = get_col_value(row, ["Cognome", "Surname"])
-    data['email'] = get_col_value(row, ["E-mail", "Email"])
-    data['data_nascita'] = get_col_value(row, ["Data di Nascita"])
-    data['cf'] = get_col_value(row, ["Codice Fiscale"])
-    data['indirizzo'] = get_col_value(row, ["Indirizzo (per Fatturazione)"])
-    
-    # --- MISURE (Presenti in entrambi) ---
-    data['peso'] = get_col_value(row, ["Peso Kg"], True)
-    data['altezza'] = get_col_value(row, ["Altezza in cm"], True)
-    
-    # Tronco
-    data['collo'] = get_col_value(row, ["Collo in cm"], True)
-    data['torace'] = get_col_value(row, ["Torace in cm"], True)
-    data['addome'] = get_col_value(row, ["Addome cm"], True)
-    data['fianchi'] = get_col_value(row, ["Fianchi cm"], True)
-    
-    # Arti Superiori
-    data['br_sx'] = get_col_value(row, ["Braccio Sx cm"], True)
-    data['br_dx'] = get_col_value(row, ["Braccio Dx cm"], True)
-    data['av_sx'] = get_col_value(row, ["Avambraccio Sx cm"], True)
-    data['av_dx'] = get_col_value(row, ["Avambraccio Dx cm"], True)
-    
-    # Arti Inferiori
-    data['cg_sx'] = get_col_value(row, ["Coscia Sx cm"], True)
-    data['cg_dx'] = get_col_value(row, ["Coscia Dx cm"], True)
-    data['pl_sx'] = get_col_value(row, ["Polpaccio Sx cm"], True)
-    data['pl_dx'] = get_col_value(row, ["Polpaccio Dx cm"], True)
-    data['caviglia'] = get_col_value(row, ["Caviglia cm"], True)
-    
-    # --- LOGISTICA ---
-    data['giorni'] = aggregate_days(row) # Funzione speciale per i giorni
-    data['minuti'] = get_col_value(row, ["Minuti medi per sessione"], True)
-    data['fasce_orarie'] = get_col_value(row, ["Fasce orarie e limitazioni cronobiologiche"])
-    
-    # --- CAMPI SPECIFICI (ANAMNESI vs CHECKUP) ---
-    if source_type == "ANAMNESI":
-        data['tipo'] = "ANAMNESI"
-        data['farmaci'] = get_col_value(row, ["Assunzione Farmaci"])
-        data['sport'] = get_col_value(row, ["Sport Praticato"])
-        data['obiettivi'] = get_col_value(row, ["Obiettivi a Breve/Lungo Termine"])
-        data['disfunzioni'] = get_col_value(row, ["Disfunzioni Patomeccaniche Note"])
-        data['overuse'] = get_col_value(row, ["Anamnesi Meccanopatica (Overuse)"])
-        data['limitazioni'] = get_col_value(row, ["Compensi e Limitazioni Funzionali"])
-        data['allergie'] = get_col_value(row, ["Allergie e Intolleranze diagnosticate"])
-        data['esclusioni'] = get_col_value(row, ["Esclusioni alimentari (Gusto, Etica, Religione)"])
-        data['integrazione'] = get_col_value(row, ["Integrazione attuale"])
-        
-        # Campi Checkup vuoti per default
-        data['aderenza'] = ""
-        data['stress'] = ""
-        data['feedback_forza'] = ""
-        data['nuovi_sintomi'] = ""
-        data['note_check'] = ""
-        
-    else: # CHECKUP
-        data['tipo'] = "CHECKUP"
-        data['obiettivi'] = "MONITORAGGIO MENSILE" # Default o se c'è campo note
-        data['aderenza'] = get_col_value(row, ["Aderenza al Piano"])
-        data['stress'] = get_col_value(row, ["Monitoraggio Stress e Recupero"])
-        data['feedback_forza'] = get_col_value(row, ["Note su forza e resistenza"])
-        data['nuovi_sintomi'] = get_col_value(row, ["Nuovi Sintomi"])
-        # Cerchiamo la nota generica finale (spesso ha nomi lunghi)
-        data['note_check'] = get_col_value(row, ["Inserire note relative a variabili aspecifiche", "Note"])
-        
-        # Campi Anamnesi vuoti o recuperati da DB se implementato
-        data['farmaci'] = ""
-        data['disfunzioni'] = ""
-        data['overuse'] = ""
-        data['integrazione'] = ""
-
-    return data
-
-# ==============================================================================
-# 3. INTERFACCIA UTENTE
+# 3. INTERFACCIA
 # ==============================================================================
 
 def main():
-    st.sidebar.title("AREA 199 | CONTROL")
+    st.sidebar.title("AREA 199 | SYSTEM")
     
-    # 1. Connessione
+    # 1. CONNESSIONE
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
         client = gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"Errore Credenziali: {e}")
+    except:
+        st.error("Errore Credenziali Secrets")
         st.stop()
         
-    # 2. Caricamento Dati
+    # 2. CARICAMENTO (Con Debug Headers)
     inbox = []
+    headers_debug = []
     
-    # Load Anamnesi
+    # Anamnesi
     try:
-        sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
-        for row in sh_ana.get_all_records():
-            inbox.append(extract_full_profile(row, "ANAMNESI"))
-    except: st.sidebar.warning("File Anamnesi non trovato")
-        
-    # Load Checkup
+        sh1 = client.open("BIO ENTRY ANAMNESI").sheet1
+        recs1 = sh1.get_all_records()
+        if recs1:
+            headers_debug.append(f"--- ANAMNESI HEADERS ({len(recs1[0].keys())}) ---")
+            headers_debug.extend(list(recs1[0].keys())) # Salva headers per debug
+            for r in recs1:
+                inbox.append({"label": f"🆕 {r.get('Nome','User')} (Anamnesi)", "data": extract_data(r, "ANAMNESI")})
+    except: pass
+
+    # Checkup
     try:
-        sh_chk = client.open("BIO CHECK-UP").sheet1
-        for row in sh_chk.get_all_records():
-            inbox.append(extract_full_profile(row, "CHECKUP"))
-    except: st.sidebar.warning("File Check-up non trovato")
+        sh2 = client.open("BIO CHECK-UP").sheet1
+        recs2 = sh2.get_all_records()
+        if recs2:
+            headers_debug.append(f"--- CHECKUP HEADERS ({len(recs2[0].keys())}) ---")
+            headers_debug.extend(list(recs2[0].keys()))
+            for r in recs2:
+                inbox.append({"label": f"🔄 {r.get('Nome','User')} (Checkup)", "data": extract_data(r, "CHECKUP")})
+    except: pass
     
-    # 3. Selezione
-    labels = [f"{x['tipo']} | {x['nome']} {x['cognome']}" for x in inbox]
-    sel_idx = st.sidebar.selectbox("Seleziona Cliente", range(len(labels)), format_func=lambda x: labels[x]) if labels else None
+    # 3. SIDEBAR DEBUGGER (FONDAMENTALE)
+    with st.sidebar.expander("🕵️ ISPETTORE COLONNE (DEBUG)", expanded=False):
+        st.write("Questi sono i nomi ESATTI che Python vede nel tuo file:")
+        for h in headers_debug:
+            st.markdown(f"<div class='debug-box'>{h}</div>", unsafe_allow_html=True)
+            
+    # 4. SELEZIONE CLIENTE
+    opts = {x['label']: x['data'] for x in inbox}
+    sel = st.selectbox("Seleziona Cliente:", ["-"] + list(opts.keys()))
     
-    if sel_idx is not None:
-        d = inbox[sel_idx]
+    if sel != "-":
+        d = opts[sel]
         
-        st.title(f"CLIENTE: {d['nome']} {d['cognome']}")
+        # --- UI EDITABILE ---
+        st.title(f"WORKSTATION: {d['nome']} {d['cognome']}")
         
-        # --- TAB MODULARI PER NON IMPAZZIRE ---
-        tab1, tab2, tab3, tab4 = st.tabs(["1. ANAGRAFICA & MISURE", "2. CLINICA & LIFESTYLE", "3. LOGISTICA", "4. FEEDBACK (Check)"])
+        t1, t2, t3 = st.tabs(["1. DATI METRICI", "2. CLINICA", "3. LOGISTICA"])
         
-        with tab1:
-            st.markdown("### MISURE ANTROPOMETRICHE")
-            c1, c2, c3, c4 = st.columns(4)
-            peso = c1.number_input("Peso (Kg)", value=d['peso'])
-            alt = c2.number_input("Altezza (cm)", value=d['altezza'])
-            eta = c3.text_input("Data Nascita", value=d['data_nascita'])
-            cf = c4.text_input("Codice Fiscale", value=d.get('cf', ''))
-
-            st.markdown("---")
-            st.markdown("##### TRONCO")
-            t1, t2, t3, t4 = st.columns(4)
-            collo = t1.number_input("Collo", value=d['collo'])
-            torace = t2.number_input("Torace", value=d['torace'])
-            addome = t3.number_input("Addome", value=d['addome'])
-            fianchi = t4.number_input("Fianchi", value=d['fianchi'])
-
-            st.markdown("##### ARTI SUPERIORI (SX / DX)")
-            as1, as2, as3, as4 = st.columns(4)
-            br_sx = as1.number_input("Braccio SX", value=d['br_sx'])
-            br_dx = as2.number_input("Braccio DX", value=d['br_dx'])
-            av_sx = as3.number_input("Avambraccio SX", value=d['av_sx'])
-            av_dx = as4.number_input("Avambraccio DX", value=d['av_dx'])
-
-            st.markdown("##### ARTI INFERIORI (SX / DX)")
-            ai1, ai2, ai3, ai4, ai5 = st.columns(5)
-            cg_sx = ai1.number_input("Coscia SX", value=d['cg_sx'])
-            cg_dx = ai2.number_input("Coscia DX", value=d['cg_dx'])
-            pl_sx = ai3.number_input("Polpaccio SX", value=d['pl_sx'])
-            pl_dx = ai4.number_input("Polpaccio DX", value=d['pl_dx'])
-            cav = ai5.number_input("Caviglia", value=d['caviglia'])
-            
-        with tab2:
-            st.markdown("### CLINICA E NUTRIZIONE")
-            cl1, cl2 = st.columns(2)
-            with cl1:
-                st.caption("INFORTUNI E PATOLOGIE")
-                farmaci = st.text_area("Farmaci", value=d['farmaci'])
-                disf = st.text_area("Disfunzioni Patomeccaniche", value=d['disfunzioni'])
-                over = st.text_area("Overuse / Meccanopatie", value=d['overuse'])
-                limit = st.text_area("Limitazioni Funzionali", value=d.get('limitazioni', ''))
-            
-            with cl2:
-                st.caption("NUTRIZIONE E INTEGRAZIONE")
-                allergie = st.text_area("Allergie/Intolleranze", value=d.get('allergie', ''))
-                escl = st.text_area("Esclusioni Alimentari", value=d.get('esclusioni', ''))
-                integ = st.text_area("Integrazione Attuale", value=d['integrazione'])
-
-        with tab3:
-            st.markdown("### LOGISTICA DI ALLENAMENTO")
+        with t1:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                peso = st.number_input("Peso", value=d['peso'])
+                alt = st.number_input("Altezza", value=d['altezza'])
+                collo = st.number_input("Collo", value=d['collo'])
+                torace = st.number_input("Torace", value=d['torace'])
+            with c2:
+                addome = st.number_input("Addome", value=d['addome'])
+                fianchi = st.number_input("Fianchi", value=d['fianchi'])
+                br_dx = st.number_input("Braccio DX", value=d['br_dx'])
+                br_sx = st.number_input("Braccio SX", value=d['br_sx'])
+            with c3:
+                cg_dx = st.number_input("Coscia DX", value=d['cg_dx'])
+                cg_sx = st.number_input("Coscia SX", value=d['cg_sx'])
+                pl_dx = st.number_input("Polpaccio DX", value=d['pl_dx'])
+                cav = st.number_input("Caviglia", value=d['caviglia'])
+                
+        with t2:
             l1, l2 = st.columns(2)
-            giorni = l1.text_input("Giorni Disponibili", value=d['giorni'])
-            minuti = l1.number_input("Minuti per sessione", value=d['minuti'])
-            fasce = l2.text_area("Fasce Orarie / Limitazioni", value=d['fasce_orarie'])
-            obiettivi = l2.text_area("OBIETTIVI", value=d['obiettivi'], height=100)
-            sport = l1.text_input("Sport Praticato", value=d.get('sport', ''))
-
-        with tab4:
-            st.markdown("### FEEDBACK CHECK-UP (Solo se pertinente)")
-            f1, f2 = st.columns(2)
-            aderenza = f1.text_input("Aderenza al Piano", value=d['aderenza'])
-            stress = f2.text_input("Monitoraggio Stress", value=d['stress'])
-            nuovi_sint = f1.text_area("Nuovi Sintomi", value=d['nuovi_sintomi'])
-            fb_forza = f2.text_area("Feedback Forza/Resistenza", value=d['feedback_forza'])
-            note_gen = st.text_area("Note Generali / Aspecifiche", value=d['note_check'])
-
-        # --- GENERAZIONE AI ---
-        st.divider()
-        if st.button("🚀 GENERA SCHEDA (DOTT. PETRUZZI)"):
-            with st.spinner("Analisi Bio-Meccanica in corso..."):
-                
-                # Payload completo
-                full_payload = {
-                    "anagrafica": {"nome": d['nome'], "eta": 30}, # Eta placeholder se data nascita non parsata
-                    "misure": {
-                        "peso": peso, "alt": alt, 
-                        "tronco": {"collo": collo, "torace": torace, "addome": addome, "fianchi": fianchi},
-                        "arti": {"br_sx": br_sx, "br_dx": br_dx, "av_sx": av_sx, "av_dx": av_dx, 
-                                 "cg_sx": cg_sx, "cg_dx": cg_dx, "pl_sx": pl_sx, "pl_dx": pl_dx}
-                    },
-                    "clinica": {
-                        "infortuni": f"{disf} {over} {limit} {nuovi_sint}",
-                        "farmaci": farmaci
-                    },
-                    "logistica": {
-                        "giorni": giorni, "durata": minuti, "fasce": fasce
-                    },
-                    "obiettivi": obiettivi,
-                    "feedback_check": f"Stress: {stress}, Forza: {fb_forza}, Aderenza: {aderenza}"
-                }
-                
-                prompt = f"""
-                Sei il Dott. Antonio Petruzzi. 
-                Analizza questi dati ESTREMAMENTE DETTAGLIATI e crea una scheda JSON.
-                
-                DATI: {json.dumps(full_payload)}
-                
-                OUTPUT JSON richiesto:
-                {{
-                    "analisi_tecnica": "...",
-                    "tabella": {{ "Giorno 1": [ {{"ex": "...", "sets": "...", "reps": "..."}} ] }}
-                }}
-                """
-                
-                try:
-                    client_ai = openai.Client(api_key=st.secrets["openai_key"])
-                    res = client_ai.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[{"role": "system", "content": prompt}],
-                        response_format={"type": "json_object"}
-                    )
-                    st.session_state['result'] = json.loads(res.choices[0].message.content)
-                except Exception as e:
-                    st.error(f"Errore AI: {e}")
-
-        if 'result' in st.session_state:
-            res = st.session_state['result']
-            st.success("SCHEDA GENERATA")
-            st.json(res)
+            farmaci = l1.text_area("Farmaci", value=d['farmaci'])
+            disf = l1.text_area("Disfunzioni", value=d['disfunzioni'])
+            over = l1.text_area("Overuse", value=d['overuse'])
             
-            if st.button("SALVA SU DB"):
-                try:
-                    db = client.open("AREA199_DB").sheet1
-                    db.append_row([datetime.now().strftime("%Y-%m-%d"), d['nome'], json.dumps(res)])
-                    st.toast("Salvato!")
-                except: st.error("Errore salvataggio DB")
+            integ = l2.text_area("Integrazione", value=d['integrazione'])
+            allergie = l2.text_area("Allergie", value=d['allergie'])
+            nuovi = l2.text_area("Nuovi Sintomi (Check)", value=d['nuovi_sintomi'])
+            
+        with t3:
+            obj = st.text_area("Obiettivi", value=d['obiettivi'])
+            giorni = st.text_input("Giorni", value=d['giorni'])
+            minuti = st.number_input("Minuti", value=d['durata'])
+            fasce = st.text_area("Fasce Orarie", value=d['fasce'])
+
+        # --- GENERAZIONE ---
+        st.divider()
+        if st.button("🚀 GENERA SCHEDA"):
+            # Qui inserisci il codice OpenAI solito
+            st.success("Dati pronti per invio a GPT-4")
+            st.json(d) # Mostra cosa invierebbe all'AI
 
 if __name__ == "__main__":
     main()
