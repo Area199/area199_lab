@@ -102,25 +102,24 @@ def extract_data_mirror(row, tipo):
     for k, v in row.items():
         val_str = str(v).lower()
         key_str = str(k).lower()
-        
-        # Se la colonna riguarda i giorni...
         if 'giorn' in key_str:
-            # ...controlliamo se il VALORE contiene esplicitamente il giorno
             for day in days_keywords:
-                if day in val_str: # Verifica stretta sul contenuto
+                if day in val_str:
                     days_found.append(day.capitalize())
     
     d['Giorni'] = ", ".join(sorted(list(set(days_found))))
 
-    # CHECKUP
+    # CHECKUP + CAMPO NOTE MANCANTE AGGIUNTO
     if tipo == "CHECKUP":
         d['Obiettivi'] = "CHECK-UP MONITORAGGIO" 
         d['Aderenza'] = get_val(row, ['Aderenza'])
         d['Stress'] = get_val(row, ['Monitoraggio Stress'])
         d['Forza'] = get_val(row, ['Note su forza'])
         d['NuoviSintomi'] = get_val(row, ['Nuovi Sintomi'])
+        # CAMPO AGGIUNTO
+        d['NoteGen'] = get_val(row, ['Inserire note relative', 'variabili aspecifiche'])
     else:
-        d['Aderenza'] = ""; d['Stress'] = ""; d['Forza'] = ""; d['NuoviSintomi'] = ""
+        d['Aderenza'] = ""; d['Stress'] = ""; d['Forza'] = ""; d['NuoviSintomi'] = ""; d['NoteGen'] = ""
 
     return d
 
@@ -173,7 +172,6 @@ def main():
         if sel != "-":
             raw_data = {x['label']: x['data'] for x in inbox}[sel]
             
-            # Reset session state on change
             if 'd' not in st.session_state or st.session_state.get('curr_label') != sel:
                 st.session_state['curr_label'] = sel
                 st.session_state['d'] = raw_data
@@ -184,10 +182,10 @@ def main():
             
             with st.expander("1. ANAGRAFICA & CONTATTI", expanded=True):
                 c1, c2, c3 = st.columns(3)
-                d['CF'] = c1.text_input("Codice Fiscale", value=d['CF'])
-                d['Indirizzo'] = c2.text_input("Indirizzo", value=d['Indirizzo'])
-                d['DataNascita'] = c3.text_input("Data Nascita", value=d['DataNascita'])
-                d['Email'] = st.text_input("Email", value=d['Email'])
+                d['CF'] = c1.text_input("Codice Fiscale", value=d.get('CF',''))
+                d['Indirizzo'] = c2.text_input("Indirizzo", value=d.get('Indirizzo',''))
+                d['DataNascita'] = c3.text_input("Data Nascita", value=d.get('DataNascita',''))
+                d['Email'] = st.text_input("Email", value=d.get('Email',''))
 
             with st.expander("2. MISURE (TUTTE)", expanded=True):
                 m1, m2, m3, m4 = st.columns(4)
@@ -229,6 +227,9 @@ def main():
                     st.markdown("---")
                     st.caption("DATI CHECK-UP")
                     d['NuoviSintomi'] = st.text_area("Nuovi Sintomi", value=d['NuoviSintomi'])
+                    # VISUALIZZAZIONE CAMPO NOTE GENERICHE AGGIUNTO
+                    d['NoteGen'] = st.text_area("Note Variabili Aspecifiche", value=d.get('NoteGen',''))
+                    
                     c_fb1, c_fb2 = st.columns(2)
                     d['Stress'] = c_fb1.text_input("Stress", value=d['Stress'])
                     d['Aderenza'] = c_fb2.text_input("Aderenza", value=d['Aderenza'])
@@ -244,7 +245,6 @@ def main():
 
             st.divider()
             
-            # --- GENERAZIONE ---
             intensita = st.selectbox("Intensità Allenamento", ["Standard", "RIR/RPE", "High Intensity (DropSets)"])
             
             if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
@@ -266,6 +266,7 @@ def main():
                     2. Durata: {d['Minuti']} min.
                     3. Intensità: {intensita}.
                     4. EVITA esercizi per: {d['Disfunzioni']} {d['Overuse']} {d['NuoviSintomi']}.
+                    5. NOTE EXTRA CLIENTE: {d.get('NoteGen', 'Nessuna')}.
                     
                     OUTPUT JSON:
                     {{
@@ -286,7 +287,6 @@ def main():
                         )
                         raw = json.loads(res.choices[0].message.content)
                         
-                        # INIEZIONE IMMAGINI
                         final_tab = {}
                         for day, exs in raw.get('tabella', {}).items():
                             enriched = []
@@ -300,7 +300,6 @@ def main():
                         st.session_state['plan'] = raw
                     except Exception as e: st.error(f"Errore AI: {e}")
 
-            # --- SAVE ---
             if 'plan' in st.session_state:
                 plan = st.session_state['plan']
                 st.header(plan.get('focus'))
@@ -309,20 +308,24 @@ def main():
                 for day, exs in plan.get('tabella', {}).items():
                     st.subheader(day)
                     for ex in exs:
-                        c1, c2 = st.columns([1,3])
-                        if ex.get('images'): 
-                            c1.image(ex['images'][0], use_container_width=True) 
-                            if len(ex['images']) > 1: st.image(ex['images'][1], use_container_width=True)
-                        c2.write(f"**{ex['ex']}** - {ex['sets']}x{ex['reps']} | {ex['rest']}")
-                        if ex.get('note'): c2.caption(ex['note'])
+                        # Layout 2 colonne per immagini (FIX IMMAGINI AFFIANCATE)
+                        c1, c2 = st.columns([2,3])
+                        with c1:
+                            if ex.get('images'): 
+                                img_cols = st.columns(2)
+                                img_cols[0].image(ex['images'][0], use_container_width=True) 
+                                if len(ex['images']) > 1: 
+                                    img_cols[1].image(ex['images'][1], use_container_width=True)
+                        with c2:
+                            st.write(f"**{ex['ex']}**")
+                            st.write(f"**{ex['sets']}** sets x **{ex['reps']}** | Rest: **{ex['rest']}**")
+                            if ex.get('note'): st.caption(f"📝 {ex['note']}")
                     st.divider()
 
                 if st.button("💾 SALVA SCHEDA"):
                     try:
                         db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                        # Salva Nome + Cognome uniti
                         full_name = f"{d.get('Nome','')} {d.get('Cognome','')}"
-                        # FORMATO ESATTO: Data, Email, Nome, JSON_Completo
                         db.append_row([
                             datetime.now().strftime("%Y-%m-%d"), 
                             d['Email'], 
@@ -334,7 +337,7 @@ def main():
                         st.error(f"Errore Salvataggio: {e}")
                         st.warning("Verifica che nel file AREA199_DB, foglio SCHEDE_ATTIVE, le intestazioni siano: Data, Email, Nome, JSON_Completo")
 
-    # --- ATLETA ---
+    # --- ATLETA (FIX ERRORE EXS) ---
     elif role == "Atleta" and pwd == "AREA199":
         client = get_client()
         email = st.text_input("Tua Email")
@@ -343,27 +346,21 @@ def main():
             try:
                 sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                 data = sh.get_all_records()
-                # Cerca l'email ignorando maiuscole/minuscole e spazi
                 plans = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
                 
                 if plans:
-                    # Prende l'ultima scheda salvata
                     last_entry = plans[-1]
-                    # Supporta sia il vecchio nome 'JSON' che il nuovo 'JSON_Completo'
                     json_data = last_entry.get('JSON_Completo', last_entry.get('JSON', '{}'))
-                    
                     p = json.loads(json_data)
                     
                     st.title(p.get('focus', 'Scheda Allenamento'))
                     st.info(p.get('analisi', 'Analisi tecnica non disponibile.'))
                     
-                    # Qui inizia il ciclo che definisce 'exs'
                     for day_name, exs in p.get('tabella', {}).items():
                         with st.expander(day_name):
                             for ex in exs:
-                                # Layout Immagini affiancate (come lato coach)
+                                # Layout Immagini affiancate anche per Atleta
                                 c1, c2 = st.columns([2,3])
-                                
                                 with c1:
                                     if ex.get('images'):
                                         img_cols = st.columns(2)
@@ -387,4 +384,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
