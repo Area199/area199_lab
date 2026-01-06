@@ -259,6 +259,7 @@ def main():
                     ISTRUZIONI LINGUA:
                     - Usa nomi esercizi in INGLESE standard (es. "Barbell Bench Press") per il database immagini.
                     - SCRIVI TUTTO IL RESTO (Analisi, Note, Focus, Consigli) IN ITALIANO.
+                    - USA UN TONO DIRETTO E CONFIDENZIALE: Dai del "TU" all'atleta (es. "Fai attenzione a...", "Il tuo obiettivo è...").
                     
                     VINCOLI TECNICI:
                     1. Giorni: {d['Giorni']}.
@@ -353,18 +354,24 @@ def main():
                     
                     st.title(p.get('focus'))
                     st.write(p.get('analisi'))
-                    for d, exs in p.get('tabella', {}).items():
-                        with st.expander(d):
-                            for ex in exs:
-                                c1, c2 = st.columns([1,3])
-                                if ex.get('images'): 
-                                    c1.image(ex['images'][0], use_container_width=True)
-                                    if len(ex['images']) > 1: st.image(ex['images'][1], use_container_width=True)
-                                c2.write(f"**{ex['ex']}** - {ex['sets']}x{ex['reps']}")
-                                c2.caption(ex.get('note'))
+                    for ex in exs:
+                        # Ho allargato un po' la colonna immagini (da [1,3] a [2,3]) per farle stare meglio affiancate
+                        c1, c2 = st.columns([2,3]) 
+                        with c1:
+                            if ex.get('images'): 
+                                # Crea due sotto-colonne per mettere le immagini vicine
+                                img_cols = st.columns(2)
+                                img_cols[0].image(ex['images'][0], use_container_width=True) 
+                                if len(ex['images']) > 1: 
+                                    img_cols[1].image(ex['images'][1], use_container_width=True)
+                        with c2:
+                            st.write(f"**{ex['ex']}**")
+                            st.write(f"**{ex['sets']}** sets x **{ex['reps']}** | Rest: **{ex['rest']}**")
+                            if ex.get('note'): st.caption(f"📝 {ex['note']}")
                 else: st.warning("Nessuna scheda attiva trovata per questa email.")
             except Exception as e: st.error(f"Errore recupero: {e}")
 
 if __name__ == "__main__":
     main()
+
 
