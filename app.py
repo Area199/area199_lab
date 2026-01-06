@@ -338,40 +338,52 @@ def main():
     elif role == "Atleta" and pwd == "AREA199":
         client = get_client()
         email = st.text_input("Tua Email")
-        if st.button("VEDI SCHEDA"):
+        
+        if st.button("VEDI LA MIA SCHEDA"):
             try:
                 sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                 data = sh.get_all_records()
-                # Ricerca per email (case insensitive)
+                # Cerca l'email ignorando maiuscole/minuscole e spazi
                 plans = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
                 
                 if plans:
-                    # Prende l'ultima scheda generata
-                    latest_plan = plans[-1]
-                    # Supporta sia vecchia che nuova nomenclatura se presente, ma punta a JSON_Completo
-                    json_str = latest_plan.get('JSON_Completo', latest_plan.get('JSON', '{}'))
-                    p = json.loads(json_str)
+                    # Prende l'ultima scheda salvata
+                    last_entry = plans[-1]
+                    # Supporta sia il vecchio nome 'JSON' che il nuovo 'JSON_Completo'
+                    json_data = last_entry.get('JSON_Completo', last_entry.get('JSON', '{}'))
                     
-                    st.title(p.get('focus'))
-                    st.write(p.get('analisi'))
-                    for ex in exs:
-                        # Ho allargato un po' la colonna immagini (da [1,3] a [2,3]) per farle stare meglio affiancate
-                        c1, c2 = st.columns([2,3]) 
-                        with c1:
-                            if ex.get('images'): 
-                                # Crea due sotto-colonne per mettere le immagini vicine
-                                img_cols = st.columns(2)
-                                img_cols[0].image(ex['images'][0], use_container_width=True) 
-                                if len(ex['images']) > 1: 
-                                    img_cols[1].image(ex['images'][1], use_container_width=True)
-                        with c2:
-                            st.write(f"**{ex['ex']}**")
-                            st.write(f"**{ex['sets']}** sets x **{ex['reps']}** | Rest: **{ex['rest']}**")
-                            if ex.get('note'): st.caption(f"📝 {ex['note']}")
-                else: st.warning("Nessuna scheda attiva trovata per questa email.")
-            except Exception as e: st.error(f"Errore recupero: {e}")
+                    p = json.loads(json_data)
+                    
+                    st.title(p.get('focus', 'Scheda Allenamento'))
+                    st.info(p.get('analisi', 'Analisi tecnica non disponibile.'))
+                    
+                    # Qui inizia il ciclo che definisce 'exs'
+                    for day_name, exs in p.get('tabella', {}).items():
+                        with st.expander(day_name):
+                            for ex in exs:
+                                # Layout Immagini affiancate (come lato coach)
+                                c1, c2 = st.columns([2,3])
+                                
+                                with c1:
+                                    if ex.get('images'):
+                                        img_cols = st.columns(2)
+                                        img_cols[0].image(ex['images'][0], use_container_width=True)
+                                        if len(ex['images']) > 1:
+                                            img_cols[1].image(ex['images'][1], use_container_width=True)
+                                
+                                with c2:
+                                    st.markdown(f"### {ex.get('ex', 'Esercizio')}")
+                                    st.write(f"**{ex.get('sets','?')}** sets x **{ex.get('reps','?')}**")
+                                    st.write(f"Rest: **{ex.get('rest','?')}**")
+                                    if ex.get('note'):
+                                        st.caption(f"📝 {ex['note']}")
+                                
+                                st.divider()
+                else:
+                    st.warning("Nessuna scheda attiva trovata per questa email.")
+                    
+            except Exception as e:
+                st.error(f"Errore recupero scheda: {e}")
 
 if __name__ == "__main__":
     main()
-
-
