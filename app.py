@@ -12,7 +12,7 @@ from rapidfuzz import process, fuzz
 # ==============================================================================
 # CONFIGURAZIONE
 # ==============================================================================
-st.set_page_config(page_title="AREA 199 | FINAL MIRROR", layout="wide", page_icon="🩸")
+st.set_page_config(page_title="AREA 199 | SYSTEM", layout="wide", page_icon="🩸")
 
 st.markdown("""
 <style>
@@ -26,7 +26,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE DATI (ESTRAZIONE CHIRURGICA)
+# 1. MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
@@ -39,7 +39,6 @@ def normalize_key(key):
     return re.sub(r'[^a-zA-Z0-9]', '', str(key).lower())
 
 def get_val(row, keywords, is_num=False):
-    """Cerca il valore esatto. Se non trova, restituisce stringa vuota o 0."""
     row_norm = {normalize_key(k): v for k, v in row.items()}
     for kw in keywords:
         kw_norm = normalize_key(kw)
@@ -55,7 +54,7 @@ def get_val(row, keywords, is_num=False):
 def extract_data_mirror(row, tipo):
     d = {}
     
-    # --- 1. ANAGRAFICA ---
+    # ANAGRAFICA
     d['Nome'] = get_val(row, ['Nome', 'Name'])
     d['Cognome'] = get_val(row, ['Cognome', 'Surname'])
     d['CF'] = get_val(row, ['Codice Fiscale'])
@@ -63,7 +62,7 @@ def extract_data_mirror(row, tipo):
     d['DataNascita'] = get_val(row, ['Data di Nascita'])
     d['Email'] = get_val(row, ['E-mail', 'Email'])
     
-    # --- 2. MISURE (TUTTE) ---
+    # MISURE
     d['Peso'] = get_val(row, ['Peso Kg'], True)
     d['Altezza'] = get_val(row, ['Altezza in cm'], True)
     d['Collo'] = get_val(row, ['Collo in cm'], True)
@@ -82,7 +81,7 @@ def extract_data_mirror(row, tipo):
     d['PolpaccioDx'] = get_val(row, ['Polpaccio Dx'], True)
     d['Caviglia'] = get_val(row, ['Caviglia'], True)
     
-    # --- 3. CLINICA & LIFESTYLE ---
+    # CLINICA
     d['Farmaci'] = get_val(row, ['Assunzione Farmaci'])
     d['Sport'] = get_val(row, ['Sport Praticato'])
     d['Disfunzioni'] = get_val(row, ['Disfunzioni Patomeccaniche'])
@@ -92,15 +91,13 @@ def extract_data_mirror(row, tipo):
     d['Esclusioni'] = get_val(row, ['Esclusioni alimentari'])
     d['Integrazione'] = get_val(row, ['Integrazione attuale'])
     
-    # --- 4. LOGISTICA (GIORNI REALI) ---
+    # LOGISTICA
     d['Obiettivi'] = get_val(row, ['Obiettivi a Breve'])
     d['Minuti'] = get_val(row, ['Minuti medi'], True)
     d['FasceOrarie'] = get_val(row, ['Fasce orarie'])
     
-    # LOGICA GIORNI: Scansiona tutta la riga per trovare i giorni selezionati
     days_found = []
     days_keywords = ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica']
-    
     for k, v in row.items():
         val_str = str(v).lower()
         key_str = str(k).lower()
@@ -108,10 +105,9 @@ def extract_data_mirror(row, tipo):
              for day in days_keywords:
                  if day in val_str or (day in key_str and val_str):
                      days_found.append(day.capitalize())
-    
     d['Giorni'] = ", ".join(sorted(list(set(days_found))))
 
-    # --- 5. CHECKUP SPECIFICS ---
+    # CHECKUP
     if tipo == "CHECKUP":
         d['Obiettivi'] = "CHECK-UP MONITORAGGIO" 
         d['Aderenza'] = get_val(row, ['Aderenza'])
@@ -157,7 +153,6 @@ def main():
     if role == "Coach Admin" and pwd == "PETRUZZI199":
         client = get_client()
         
-        # INBOX
         inbox = []
         try:
             sh1 = client.open("BIO ENTRY ANAMNESI").sheet1
@@ -171,25 +166,23 @@ def main():
         sel = st.selectbox("SELEZIONA CLIENTE", ["-"] + list({x['label']: x for x in inbox}.keys()))
         
         if sel != "-":
-            # --- FIX CRASH SESSION STATE ---
-            # Se la cache è vecchia (contiene chiavi minuscole), forziamo il ricaricamento
             raw_data = {x['label']: x['data'] for x in inbox}[sel]
             
-            if 'd' not in st.session_state or st.session_state.get('curr_label') != sel or 'Nome' not in st.session_state['d']:
+            # Reset session state on change
+            if 'd' not in st.session_state or st.session_state.get('curr_label') != sel:
                 st.session_state['curr_label'] = sel
                 st.session_state['d'] = raw_data
             
             d = st.session_state['d']
 
-            # --- FORM DI EDITING ---
             st.markdown(f"### 👤 {d.get('Nome','')} {d.get('Cognome','')}")
             
             with st.expander("1. ANAGRAFICA & CONTATTI", expanded=True):
                 c1, c2, c3 = st.columns(3)
-                d['CF'] = c1.text_input("Codice Fiscale", value=d.get('CF',''))
-                d['Indirizzo'] = c2.text_input("Indirizzo", value=d.get('Indirizzo',''))
-                d['DataNascita'] = c3.text_input("Data Nascita", value=d.get('DataNascita',''))
-                d['Email'] = st.text_input("Email", value=d.get('Email',''))
+                d['CF'] = c1.text_input("Codice Fiscale", value=d['CF'])
+                d['Indirizzo'] = c2.text_input("Indirizzo", value=d['Indirizzo'])
+                d['DataNascita'] = c3.text_input("Data Nascita", value=d['DataNascita'])
+                d['Email'] = st.text_input("Email", value=d['Email'])
 
             with st.expander("2. MISURE (TUTTE)", expanded=True):
                 m1, m2, m3, m4 = st.columns(4)
@@ -237,7 +230,6 @@ def main():
                     d['Forza'] = st.text_area("Note Forza", value=d['Forza'])
 
             with st.expander("4. LOGISTICA (GIORNI REALI)", expanded=True):
-                # GIORNI COME TESTO EDITABILE
                 d['Giorni'] = st.text_input("Giorni Disponibili (Editabile)", value=d['Giorni'])
                 c_log1, c_log2 = st.columns(2)
                 d['Minuti'] = c_log1.number_input("Minuti Sessione", value=d['Minuti'])
@@ -251,28 +243,31 @@ def main():
             intensita = st.selectbox("Intensità Allenamento", ["Standard", "RIR/RPE", "High Intensity (DropSets)"])
             
             if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
-                with st.spinner("Analisi Completa..."):
+                with st.spinner("Elaborazione (Analisi e Commenti in ITALIANO)..."):
                     
                     prompt = f"""
-                    Sei Antonio Petruzzi. Crea scheda allenamento JSON in INGLESE.
+                    Sei Antonio Petruzzi. Crea scheda allenamento JSON.
                     
-                    DATI ATLETA (TUTTI I CAMPI COMPILATI):
+                    DATI ATLETA:
                     {json.dumps(d, indent=2)}
                     
-                    ISTRUZIONI:
-                    1. Rispetta rigorosamente i 'Giorni' indicati: {d['Giorni']}.
-                    2. Durata massima: {d['Minuti']} minuti.
+                    ISTRUZIONI LINGUA:
+                    - Usa nomi esercizi in INGLESE standard (es. "Barbell Bench Press") per il database immagini.
+                    - SCRIVI TUTTO IL RESTO (Analisi, Note, Focus, Consigli) IN ITALIANO.
+                    
+                    VINCOLI TECNICI:
+                    1. Giorni: {d['Giorni']}.
+                    2. Durata: {d['Minuti']} min.
                     3. Intensità: {intensita}.
-                    4. EVITA ASSOLUTAMENTE esercizi che aggravano: {d['Disfunzioni']} {d['Overuse']} {d['NuoviSintomi']}.
-                    5. Considera {d['Limitazioni']} nella scelta degli esercizi.
+                    4. EVITA esercizi per: {d['Disfunzioni']} {d['Overuse']} {d['NuoviSintomi']}.
                     
                     OUTPUT JSON:
                     {{
-                        "focus": "Nome Mesociclo",
-                        "analisi": "Analisi tecnica basata su farmaci, infortuni e struttura.",
+                        "focus": "Nome Mesociclo (ITA)",
+                        "analisi": "Analisi tecnica in ITALIANO...",
                         "tabella": {{
-                            "Giorno 1 (Es: Lunedi)": [
-                                {{"ex": "Barbell Bench Press", "sets": "4", "reps": "8", "rest": "120s", "note": "..."}}
+                            "Giorno 1": [
+                                {{"ex": "Barbell Bench Press", "sets": "4", "reps": "8", "rest": "120s", "note": "Gomiti stretti, controllo..."}}
                             ]
                         }}
                     }}
@@ -316,13 +311,22 @@ def main():
                         if ex.get('note'): c2.caption(ex['note'])
                     st.divider()
 
-                if st.button("💾 SALVA"):
+                if st.button("💾 SALVA SCHEDA"):
                     try:
                         db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
+                        # Salva Nome + Cognome uniti
                         full_name = f"{d.get('Nome','')} {d.get('Cognome','')}"
-                        db.append_row([datetime.now().strftime("%Y-%m-%d"), d['Email'], full_name, json.dumps(st.session_state['plan'])])
-                        st.success("SALVATO!")
-                    except: st.error("Errore Salvataggio")
+                        # FORMATO ESATTO: Data, Email, Nome, JSON_Completo
+                        db.append_row([
+                            datetime.now().strftime("%Y-%m-%d"), 
+                            d['Email'], 
+                            full_name, 
+                            json.dumps(st.session_state['plan'])
+                        ])
+                        st.success("SALVATO CORRETTAMENTE!")
+                    except Exception as e: 
+                        st.error(f"Errore Salvataggio: {e}")
+                        st.warning("Verifica che nel file AREA199_DB, foglio SCHEDE_ATTIVE, le intestazioni siano: Data, Email, Nome, JSON_Completo")
 
     # --- ATLETA ---
     elif role == "Atleta" and pwd == "AREA199":
@@ -332,9 +336,16 @@ def main():
             try:
                 sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                 data = sh.get_all_records()
-                plans = [x for x in data if x.get('Email','').lower() == email.lower()]
+                # Ricerca per email (case insensitive)
+                plans = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
+                
                 if plans:
-                    p = json.loads(plans[-1]['JSON_Completo'])
+                    # Prende l'ultima scheda generata
+                    latest_plan = plans[-1]
+                    # Supporta sia vecchia che nuova nomenclatura se presente, ma punta a JSON_Completo
+                    json_str = latest_plan.get('JSON_Completo', latest_plan.get('JSON', '{}'))
+                    p = json.loads(json_str)
+                    
                     st.title(p.get('focus'))
                     st.write(p.get('analisi'))
                     for d, exs in p.get('tabella', {}).items():
@@ -346,8 +357,8 @@ def main():
                                     if len(ex['images']) > 1: st.image(ex['images'][1], use_container_width=True)
                                 c2.write(f"**{ex['ex']}** - {ex['sets']}x{ex['reps']}")
                                 c2.caption(ex.get('note'))
-                else: st.warning("Nessuna scheda.")
-            except: st.error("Errore recupero")
+                else: st.warning("Nessuna scheda attiva trovata per questa email.")
+            except Exception as e: st.error(f"Errore recupero: {e}")
 
 if __name__ == "__main__":
     main()
