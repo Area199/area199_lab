@@ -4,16 +4,15 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
 import re
-import math
 from datetime import datetime
 import openai
 import requests
 from rapidfuzz import process, fuzz
 
 # ==============================================================================
-# 0. CONFIGURAZIONE & ASSETS (CEMENTATO)
+# 0. CONFIGURAZIONE & ASSETS
 # ==============================================================================
-st.set_page_config(page_title="AREA 199 | TOTAL SYSTEM", layout="wide", page_icon="🩸")
+st.set_page_config(page_title="AREA 199 | SYSTEM", layout="wide", page_icon="🩸")
 
 st.markdown("""
 <style>
@@ -29,65 +28,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE SCIENTIFICO (SOMATOTIPO & BIO-MECCANICA)
+# 1. MOTORE IMMAGINI & LOGICA ALLENAMENTO
 # ==============================================================================
-
-def calc_somatotype_scientific(w, h, neck, chest, abdomen, arm, thigh, calf, wrist, ankle):
-    """
-    Calcola il Somatotipo (Endo - Meso - Ecto) basandosi sulle formule matematiche fornite.
-    """
-    if w <= 0 or h <= 0: return "Dati Insufficienti", (0,0,0)
-    
-    # 1. ECTOMORFIA (RPI)
-    # Formula: RPI = H / cbrt(W)
-    try:
-        rpi = h / (w**(1/3))
-    except: return "Err", (0,0,0)
-
-    if rpi >= 40.75: ecto = 0.732 * rpi - 28.58
-    elif rpi > 38.25: ecto = 0.463 * rpi - 17.63
-    else: ecto = 0.1
-    
-    # 2. ENDOMORFIA (Navy Body Fat -> Scala 1-7)
-    # Stima BF% Navy Method (Uomo)
-    # 86.010 * log10(addome - collo) - 70.041 * log10(altezza) + 36.76
-    try:
-        val_c = abdomen - neck
-        if val_c <= 0: val_c = 1 # Protezione log
-        bf_perc = 86.010 * math.log10(val_c) - 70.041 * math.log10(h) + 36.76
-    except: bf_perc = 15.0 # Fallback
-    
-    # Mapping BF -> Punteggio Endo
-    if bf_perc < 8: endo = 1.5
-    elif bf_perc < 13: endo = 2.5
-    elif bf_perc < 18: endo = 3.5
-    elif bf_perc < 25: endo = 5.0
-    else: endo = 6.5
-    
-    # 3. MESOMORFIA (Delta Muscolare)
-    # Delta = (Torace + Braccio + Coscia + Polpaccio) - (Addome * 2)
-    # Nota: Assumiamo misure in cm. Braccio/Coscia/Polpaccio dovrebbero essere corretti per la pelle, ma usiamo raw per semplificazione input
-    delta = (chest + arm + thigh + calf) - (abdomen * 2)
-    
-    if delta > 50: meso = 6.5
-    elif delta > 30: meso = 5.0
-    elif delta > 15: meso = 3.0
-    else: meso = 1.5
-    
-    # Bonus Ossa (Polso > 18 o Caviglia > 23)
-    if wrist > 18 or ankle > 23: meso += 0.5
-    
-    # Formattazione
-    return f"{endo:.1f} (Endo) - {meso:.1f} (Meso) - {ecto:.1f} (Ecto)", (endo, meso, ecto)
-
-def suggest_split(days):
-    d = int(days) if days else 3
-    if d <= 2: return "Full Body (A-B)"
-    if d == 3: return "Push / Pull / Legs (Rotazione)"
-    if d == 4: return "Upper / Lower (x2)"
-    if d == 5: return "P.H.A.T. (Power Hypertrophy Adaptive Training) / Hybrid"
-    if d >= 6: return "Push / Pull / Legs (x2)"
-    return "Custom"
 
 @st.cache_data
 def load_exercise_db():
@@ -100,8 +42,10 @@ def load_exercise_db():
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+    
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
+    
     if match and match[1] > 60:
         target_name = match[0]
         for ex in db_exercises:
@@ -109,8 +53,17 @@ def find_exercise_images(name_query, db_exercises):
                 return [BASE_URL + img for img in ex.get('images', [])]
     return []
 
+def suggest_split(days):
+    """Suggerisce la split in base ai giorni disponibili"""
+    d = int(days) if days else 3
+    if d <= 2: return "Full Body (A-B)"
+    if d == 3: return "Push / Pull / Legs"
+    if d == 4: return "Upper / Lower (x2)"
+    if d == 5: return "Hybrid (PPL + UL)"
+    return "PPL x2"
+
 # ==============================================================================
-# 2. ESTRAZIONE DATI (MAPPA TOTALE 1:1)
+# 2. ESTRAZIONE DATI (MAPPA 1:1 SENZA POLSO)
 # ==============================================================================
 
 @st.cache_resource
@@ -142,41 +95,34 @@ def get_val(row, keywords, is_num=False):
 def extract_data_full(row, tipo):
     d = {}
     
-    # --- 1. ANAGRAFICA ---
+    # --- ANAGRAFICA ---
     d['nome'] = get_val(row, ['Nome', 'Name']) + " " + get_val(row, ['Cognome'])
     d['email'] = get_val(row, ['E-mail', 'Email'])
     d['data_nascita'] = get_val(row, ['Data di Nascita'])
     
-    # --- 2. MISURE ANTROPOMETRICHE (Tutte necessarie per le formule) ---
+    # --- MISURE ---
     d['peso'] = get_val(row, ['Peso Kg'], True)
     d['altezza'] = get_val(row, ['Altezza in cm'], True)
-    
-    # Circonferenze
     d['collo'] = get_val(row, ['Collo in cm'], True)
     d['torace'] = get_val(row, ['Torace in cm'], True)
     d['addome'] = get_val(row, ['Addome cm'], True)
     d['fianchi'] = get_val(row, ['Fianchi cm'], True)
     
-    # Arti (Usiamo il destro come riferimento per la formula se non specificato altrimenti)
-    d['br_dx'] = get_val(row, ['Braccio Dx cm'], True)
     d['br_sx'] = get_val(row, ['Braccio Sx cm'], True)
-    d['av_dx'] = get_val(row, ['Avambraccio Dx cm'], True)
+    d['br_dx'] = get_val(row, ['Braccio Dx cm'], True)
     d['av_sx'] = get_val(row, ['Avambraccio Sx cm'], True)
-    d['cg_dx'] = get_val(row, ['Coscia Dx cm'], True)
+    d['av_dx'] = get_val(row, ['Avambraccio Dx cm'], True)
     d['cg_sx'] = get_val(row, ['Coscia Sx cm'], True)
-    d['pl_dx'] = get_val(row, ['Polpaccio Dx cm'], True)
+    d['cg_dx'] = get_val(row, ['Coscia Dx cm'], True)
     d['pl_sx'] = get_val(row, ['Polpaccio Sx cm'], True)
-    
-    # Ossa (Per bonus Mesomorfia)
+    d['pl_dx'] = get_val(row, ['Polpaccio Dx cm'], True)
     d['caviglia'] = get_val(row, ['Caviglia cm'], True)
-    # Se il polso non c'è nel form, usiamo un default o lo stimiamo (qui mettiamo 0 se manca, l'operatore può correggerlo)
-    d['polso'] = get_val(row, ['Polso'], True) 
     
-    # --- 3. LOGISTICA (Giorni e Orari) ---
+    # --- LOGISTICA ---
     d['minuti'] = get_val(row, ['Minuti medi'], True)
     d['fasce'] = get_val(row, ['Fasce orarie', 'limitazioni cronobiologiche'])
     
-    # Aggregazione Giorni
+    # Giorni
     days_found = []
     for k, v in row.items():
         val_str = str(v).lower()
@@ -185,15 +131,14 @@ def extract_data_full(row, tipo):
     d['giorni'] = ", ".join(list(set(days_found)))
     d['num_giorni'] = len(days_found) if days_found else 3
 
-    # --- 4. CLINICA SPECIFICA ---
+    # --- CLINICA ---
     if tipo == "ANAMNESI":
         d['cf'] = get_val(row, ['Codice Fiscale'])
         d['indirizzo'] = get_val(row, ['Indirizzo'])
         d['sport'] = get_val(row, ['Sport Praticato'])
         d['obiettivi'] = get_val(row, ['Obiettivi a Breve'])
         d['farmaci'] = get_val(row, ['Assunzione Farmaci'])
-        # Uniamo Disfunzioni + Overuse per l'AI
-        d['patologie'] = get_val(row, ['Disfunzioni Patomeccaniche']) + " | " + get_val(row, ['Anamnesi Meccanopatica'])
+        d['disfunzioni'] = get_val(row, ['Disfunzioni Patomeccaniche']) + " " + get_val(row, ['Anamnesi Meccanopatica'])
         d['limitazioni'] = get_val(row, ['Compensi e Limitazioni'])
         d['allergie'] = get_val(row, ['Allergie'])
         d['esclusioni'] = get_val(row, ['Esclusioni alimentari'])
@@ -209,8 +154,7 @@ def extract_data_full(row, tipo):
         d['nuovi'] = get_val(row, ['Nuovi Sintomi'])
         d['note_gen'] = get_val(row, ['Inserire note relative'])
         
-        # Le patologie pregresse vanno riempite manualmente o dal DB se si vuole, qui lasciamo vuoto per focus su nuovi sintomi
-        d['cf']=""; d['indirizzo']=""; d['sport']=""; d['farmaci']=""; d['patologie']=""; d['limitazioni']=""; d['allergie']=""; d['esclusioni']=""; d['integrazione']=""
+        d['cf']=""; d['indirizzo']=""; d['sport']=""; d['farmaci']=""; d['disfunzioni']=""; d['limitazioni']=""; d['allergie']=""; d['esclusioni']=""; d['integrazione']=""
 
     return d
 
@@ -249,131 +193,112 @@ def main():
                 st.session_state['d'] = {x['label']: x['data'] for x in inbox}[sel]
             
             d = st.session_state['d']
-            
-            # --- CALCOLO SOMATOTIPO LIVE ---
-            # Usiamo i valori attuali nel dizionario (che possono essere modificati dagli input)
-            soma_str, soma_vals = calc_somatotype_scientific(
-                d['peso'], d['altezza'], d['collo'], d['torace'], d['addome'], 
-                d['br_dx'], d['cg_dx'], d['pl_dx'], d['polso'], d['caviglia']
-            )
             split_sugg = suggest_split(d['num_giorni'])
 
             st.title(f"{d['nome']}")
+            st.markdown(f"**CF:** {d['cf']} | **Indirizzo:** {d['indirizzo']}")
             
-            # METRICHE IN EVIDENZA
+            # METRICHE SENZA SOMATOTIPO
             m1, m2, m3 = st.columns(3)
-            m1.markdown(f"<div class='metric-box'><div class='metric-val'>{soma_str}</div><div class='metric-label'>Somatotipo (Endo-Meso-Ecto)</div></div>", unsafe_allow_html=True)
+            m1.markdown(f"<div class='metric-box'><div class='metric-val'>{d['peso']} kg</div><div class='metric-label'>Peso Corporeo</div></div>", unsafe_allow_html=True)
             m2.markdown(f"<div class='metric-box'><div class='metric-val'>{split_sugg}</div><div class='metric-label'>Split Suggerita</div></div>", unsafe_allow_html=True)
-            m3.markdown(f"<div class='metric-box'><div class='metric-val'>{d['num_giorni']} / {int(d['minuti'])}min</div><div class='metric-label'>Volume Settimanale</div></div>", unsafe_allow_html=True)
-            
+            m3.markdown(f"<div class='metric-box'><div class='metric-val'>{d['num_giorni']} / {int(d['minuti'])}min</div><div class='metric-label'>Volume</div></div>", unsafe_allow_html=True)
+
             # --- TAB EDITOR ---
-            t1, t2, t3, t4 = st.tabs(["1. MISURE & FISIO", "2. CLINICA & LIFESTYLE", "3. LOGISTICA", "4. GENERATORE"])
+            t1, t2, t3, t4 = st.tabs(["1. MISURE", "2. CLINICA", "3. LOGISTICA", "4. GENERATORE"])
             
             with t1:
-                st.caption("Modifica i valori per ricalcolare il somatotipo in tempo reale.")
                 c1, c2, c3 = st.columns(3)
                 with c1: 
-                    d['peso'] = st.number_input("Peso (kg)", value=d['peso'])
-                    d['altezza'] = st.number_input("Altezza (cm)", value=d['altezza'])
-                    d['collo'] = st.number_input("Collo", value=d['collo'])
+                    d['peso'] = st.number_input("Peso", value=d['peso'])
+                    d['altezza'] = st.number_input("Altezza", value=d['altezza'])
                 with c2:
-                    d['torace'] = st.number_input("Torace", value=d['torace'])
-                    d['addome'] = st.number_input("Addome", value=d['addome'])
-                    d['fianchi'] = st.number_input("Fianchi", value=d['fianchi'])
+                    st.write("TRONCO")
+                    st.caption(f"Collo: {d['collo']} | Torace: {d['torace']} | Addome: {d['addome']} | Fianchi: {d['fianchi']}")
                 with c3:
-                    d['polso'] = st.number_input("Polso", value=d['polso'])
-                    d['caviglia'] = st.number_input("Caviglia", value=d['caviglia'])
-                
-                st.markdown("---")
-                st.write("ARTI (Per Delta Muscolare)")
-                a1, a2, a3 = st.columns(3)
-                d['br_dx'] = a1.number_input("Braccio", value=d['br_dx'])
-                d['cg_dx'] = a2.number_input("Coscia", value=d['cg_dx'])
-                d['pl_dx'] = a3.number_input("Polpaccio", value=d['pl_dx'])
-
+                    st.write("ARTI (Dx/Sx)")
+                    st.caption(f"Braccio: {d['br_dx']}/{d['br_sx']} | Gamba: {d['cg_dx']}/{d['cg_sx']}")
+            
             with t2:
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    d['patologie'] = st.text_area("Patomeccanica & Overuse", value=d['patologie'])
-                    d['nuovi'] = st.text_area("Nuovi Sintomi (Check)", value=d['nuovi'])
+                k1, k2 = st.columns(2)
+                with k1:
+                    d['disfunzioni'] = st.text_area("Patologie/Infortuni", value=f"{d['disfunzioni']} {d['nuovi']} {d['limitazioni']}")
                     d['farmaci'] = st.text_area("Farmaci", value=d['farmaci'])
-                with col_b:
-                    d['integrazione'] = st.text_area("Integrazione", value=d['integrazione'])
+                with k2:
                     st.text_area("Allergie/Esclusioni", value=f"{d['allergie']} {d['esclusioni']}")
-                    st.text_input("Feedback Stress/Aderenza", value=f"Stress: {d['stress']} | Aderenza: {d['aderenza']}")
+                    d['integrazione'] = st.text_area("Integrazione", value=d['integrazione'])
+                    st.text_input("Feedback", value=f"Stress: {d['stress']} | Aderenza: {d['aderenza']}")
 
             with t3:
                 d['obiettivi'] = st.text_area("OBIETTIVI", value=d['obiettivi'])
-                st.text_input("Sport", value=d['sport'])
                 st.text_input("Fasce Orarie", value=d['fasce'])
-
+                st.text_input("Sport", value=d['sport'])
+            
             with t4:
                 giorni_slider = st.slider("Giorni Training", 1, 7, int(d['num_giorni']) if d['num_giorni'] > 0 else 3)
                 minuti_slider = st.slider("Minuti Sessione", 30, 150, int(d['minuti']) if d['minuti'] > 0 else 60)
-                intensita = st.selectbox("Intensità & Tecniche", ["Standard", "RIR/RPE (Avanzato)", "Pro (DropSets, RestPause, SuperSets)"])
-                
-                if st.button("🚀 GENERA SCHEDA (AI)"):
-                    with st.spinner("Analisi Somatotipo & Generazione..."):
-                        max_sets = int(minuti_slider / 3) # Stima 3 min per set inclusi recuperi
-                        
-                        prompt = f"""
-                        Sei Antonio Petruzzi. Crea scheda allenamento JSON in INGLESE.
-                        
-                        PROFILO FISIOLOGICO:
-                        - Atleta: {d['nome']}
-                        - Somatotipo Scientifico: {soma_str}
-                        - Obiettivi: {d['obiettivi']}
-                        
-                        VINCOLI:
-                        - {giorni_slider} giorni a settimana.
-                        - {minuti_slider} minuti max ({max_sets} serie totali a seduta).
-                        - Split Suggerita: {split_sugg}.
-                        - Intensità: {intensita}.
-                        
-                        CLINICA (CRITICO - EVITA DANNI):
-                        - Patologie/Dolori: {d['patologie']} {d['nuovi']}
-                        - Limitazioni: {d['limitazioni']}
-                        
-                        OUTPUT JSON:
-                        {{
-                            "focus": "Nome del Mesociclo",
-                            "analisi": "Spiegazione tecnica basata sul somatotipo {soma_str}",
-                            "tabella": {{
-                                "Day 1 - Focus": [
-                                    {{"ex": "Barbell Bench Press", "sets": "4", "reps": "6-8", "rest": "120s", "note": "Technique cues..."}},
-                                    ...
-                                ]
-                            }}
-                        }}
-                        """
-                        try:
-                            client_ai = openai.Client(api_key=st.secrets["openai_key"])
-                            res = client_ai.chat.completions.create(
-                                model="gpt-4o", messages=[{"role":"system","content":prompt}], response_format={"type":"json_object"}
-                            )
-                            raw = json.loads(res.choices[0].message.content)
-                            
-                            # INIEZIONE IMMAGINI (Start/End)
-                            final_tab = {}
-                            for day, exs in raw.get('tabella', {}).items():
-                                enriched = []
-                                for ex in exs:
-                                    imgs = find_exercise_images(ex['ex'], ex_db)
-                                    ex['images'] = imgs[:2] # Prendi Start e End
-                                    enriched.append(ex)
-                                final_tab[day] = enriched
-                            raw['tabella'] = final_tab
-                            
-                            st.session_state['plan'] = raw
-                        except Exception as e: st.error(f"Errore AI: {e}")
+                intensita = st.selectbox("Intensità", ["Standard", "RIR/RPE", "Pro (DropSets/RestPause)"])
 
-            # --- VISTA FINALE & SALVATAGGIO ---
+            # --- GENERAZIONE ---
+            if st.button("🚀 GENERA SCHEDA (NO SOMATOTIPO)"):
+                with st.spinner("Generazione Protocollo..."):
+                    max_sets = int(minuti_slider / 3.5)
+                    
+                    # Prompt senza somatotipo
+                    prompt = f"""
+                    Sei Antonio Petruzzi. Genera scheda allenamento JSON in INGLESE.
+                    
+                    ATLETA: {d['nome']}.
+                    STRUTTURA: Peso {d['peso']}kg, Altezza {d['altezza']}cm.
+                    OBIETTIVI: {d['obiettivi']}.
+                    VINCOLI: {giorni_slider} giorni, {minuti_slider} min (Max {max_sets} sets/session).
+                    SPLIT: {split_sugg}. INTENSITA: {intensita}.
+                    
+                    QUADRO CLINICO (IMPORTANTE - EVITA ESERCIZI DANNOSI):
+                    - Patomeccanica/Overuse: {d['disfunzioni']}
+                    - Limitazioni: {d['limitazioni']}
+                    
+                    OUTPUT JSON RICHIESTO:
+                    {{
+                        "focus": "Nome Mesociclo",
+                        "analisi": "Analisi tecnica dello stato attuale.",
+                        "tabella": {{
+                            "Day 1 - Focus": [
+                                {{"ex": "Barbell Bench Press", "sets": "4", "reps": "6-8", "rest": "120s", "note": "Gomiti stretti..."}},
+                                ...
+                            ]
+                        }}
+                    }}
+                    """
+                    
+                    try:
+                        client_ai = openai.Client(api_key=st.secrets["openai_key"])
+                        res = client_ai.chat.completions.create(
+                            model="gpt-4o", messages=[{"role":"system","content":prompt}], response_format={"type":"json_object"}
+                        )
+                        raw = json.loads(res.choices[0].message.content)
+                        
+                        # IMAGE INJECTION
+                        final_tab = {}
+                        for day, exs in raw.get('tabella', {}).items():
+                            enriched = []
+                            for ex in exs:
+                                imgs = find_exercise_images(ex['ex'], ex_db)
+                                ex['images'] = imgs[:2]
+                                enriched.append(ex)
+                            final_tab[day] = enriched
+                        raw['tabella'] = final_tab
+                        
+                        st.session_state['plan'] = raw
+                    except Exception as e: st.error(f"Errore AI: {e}")
+
+            # --- VIEW & SAVE ---
             if 'plan' in st.session_state:
                 plan = st.session_state['plan']
                 
-                with st.expander("📝 MODIFICA JSON (AVANZATO)"):
-                    edited = st.text_area("JSON Code", json.dumps(plan, indent=2))
-                    if st.button("Applica Modifiche"):
+                with st.expander("📝 MODIFICA JSON (COACH ONLY)"):
+                    edited = st.text_area("JSON", json.dumps(plan, indent=2), height=300)
+                    if st.button("Applica Modifiche"): 
                         st.session_state['plan'] = json.loads(edited)
                         st.rerun()
 
@@ -385,22 +310,20 @@ def main():
                     for ex in exs:
                         c1, c2 = st.columns([1,3])
                         with c1:
-                            if ex.get('images'):
-                                # Mostra le due immagini affiancate se presenti
-                                i_cols = st.columns(len(ex['images']))
-                                for idx, img in enumerate(ex['images']):
-                                    i_cols[idx].image(img, use_container_width=True)
+                            if ex.get('images'): 
+                                st.image(ex['images'][0], use_container_width=True) 
+                                if len(ex['images']) > 1: st.image(ex['images'][1], use_container_width=True)
                         with c2:
-                            st.markdown(f"**{ex['ex']}**")
-                            st.write(f"{ex['sets']} x {ex['reps']} | Rest: {ex['rest']}")
-                            if ex.get('note'): st.caption(f"💡 {ex['note']}")
+                            st.write(f"**{ex['ex']}**")
+                            st.write(f"{ex['sets']} sets x {ex['reps']} | Rest: {ex['rest']}")
+                            if ex.get('note'): st.caption(ex['note'])
                     st.divider()
 
-                if st.button("💾 SALVA SCHEDA NEL DB"):
+                if st.button("💾 SALVA E ATTIVA"):
                     try:
                         db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                         db.append_row([datetime.now().strftime("%Y-%m-%d"), d['email'], d['nome'], json.dumps(st.session_state['plan'])])
-                        st.success("Scheda Salvata e Inviata!")
+                        st.success("SCHEDA SALVATA CORRETTAMENTE!")
                     except: st.error("Errore Salvataggio")
 
     # --- ATLETA ---
@@ -420,14 +343,13 @@ def main():
                         with st.expander(d):
                             for ex in exs:
                                 c1, c2 = st.columns([1,3])
-                                if ex.get('images'):
-                                    i_cols = c1.columns(len(ex['images']))
-                                    for idx, img in enumerate(ex['images']):
-                                        i_cols[idx].image(img)
+                                if ex.get('images'): 
+                                    c1.image(ex['images'][0], use_container_width=True)
+                                    if len(ex['images']) > 1: st.image(ex['images'][1], use_container_width=True)
                                 c2.write(f"**{ex['ex']}** - {ex['sets']}x{ex['reps']}")
                                 c2.caption(ex.get('note'))
-                else: st.warning("Nessuna scheda trovata.")
-            except: st.error("Errore recupero")
+                else: st.warning("Nessuna scheda attiva.")
+            except: st.error("Errore recupero scheda")
 
 if __name__ == "__main__":
     main()
