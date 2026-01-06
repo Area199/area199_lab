@@ -229,6 +229,7 @@ def main():
                     st.markdown("---")
                     st.caption("DATI CHECK-UP")
                     d['NuoviSintomi'] = st.text_area("Nuovi Sintomi", value=d['NuoviSintomi'])
+                    d['NoteGen'] = st.text_area("Note Variabili Aspecifiche (Recupero/Stress)", value=d.get('NoteGen', ''))
                     c_fb1, c_fb2 = st.columns(2)
                     d['Stress'] = c_fb1.text_input("Stress", value=d['Stress'])
                     d['Aderenza'] = c_fb2.text_input("Aderenza", value=d['Aderenza'])
@@ -267,6 +268,13 @@ def main():
                     3. Intensità: {intensita}.
                     4. EVITA esercizi per: {d['Disfunzioni']} {d['Overuse']} {d['NuoviSintomi']}.
                     
+                    CLINICA (IMPORTANTE):
+                        - Patomeccanica: {d['disfunzioni']}
+                        - Overuse: {d['overuse']}
+                        - Limitazioni: {d['limitazioni']}
+                        - Sintomi: {d['nuovi_sintomi']}
+                        - Variabili Aspecifiche/Recupero: {d.get('NoteGen', 'Nessuna')}
+                        
                     OUTPUT JSON:
                     {{
                         "focus": "Nome Mesociclo (ITA)",
@@ -387,3 +395,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
