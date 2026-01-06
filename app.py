@@ -10,9 +10,9 @@ import requests
 from rapidfuzz import process, fuzz
 
 # ==============================================================================
-# 0. CONFIGURAZIONE
+# CONFIGURAZIONE
 # ==============================================================================
-st.set_page_config(page_title="AREA 199 | TOTAL MIRROR", layout="wide", page_icon="🩸")
+st.set_page_config(page_title="AREA 199 | FINAL MIRROR", layout="wide", page_icon="🩸")
 
 st.markdown("""
 <style>
@@ -46,7 +46,6 @@ def get_val(row, keywords, is_num=False):
         for k_row, v_row in row_norm.items():
             if kw_norm in k_row:
                 if is_num:
-                    # Pulizia numeri
                     s = str(v_row).replace(',', '.').replace('kg', '').replace('cm', '').strip()
                     try: return float(re.search(r"[-+]?\d*\.\d+|\d+", s).group())
                     except: return 0.0
@@ -105,30 +104,22 @@ def extract_data_mirror(row, tipo):
     for k, v in row.items():
         val_str = str(v).lower()
         key_str = str(k).lower()
-        # Se la colonna contiene "giorni" e il valore non è vuoto
         if 'giorn' in key_str and val_str:
-             # Controlla se il valore è un giorno o se la chiave è un giorno
              for day in days_keywords:
                  if day in val_str or (day in key_str and val_str):
                      days_found.append(day.capitalize())
     
-    # Rimuovi duplicati e unisci
     d['Giorni'] = ", ".join(sorted(list(set(days_found))))
 
     # --- 5. CHECKUP SPECIFICS ---
     if tipo == "CHECKUP":
-        d['Obiettivi'] = "CHECK-UP MONITORAGGIO" # Override
+        d['Obiettivi'] = "CHECK-UP MONITORAGGIO" 
         d['Aderenza'] = get_val(row, ['Aderenza'])
         d['Stress'] = get_val(row, ['Monitoraggio Stress'])
         d['Forza'] = get_val(row, ['Note su forza'])
         d['NuoviSintomi'] = get_val(row, ['Nuovi Sintomi'])
-        d['NoteGen'] = get_val(row, ['Inserire note relative'])
     else:
-        d['Aderenza'] = ""
-        d['Stress'] = ""
-        d['Forza'] = ""
-        d['NuoviSintomi'] = ""
-        d['NoteGen'] = ""
+        d['Aderenza'] = ""; d['Stress'] = ""; d['Forza'] = ""; d['NuoviSintomi'] = ""
 
     return d
 
@@ -154,7 +145,7 @@ def find_exercise_images(name_query, db_exercises):
     return []
 
 # ==============================================================================
-# 3. INTERFACCIA UTENTE (TUTTO EDITABILE)
+# 3. INTERFACCIA UTENTE
 # ==============================================================================
 
 def main():
@@ -180,22 +171,25 @@ def main():
         sel = st.selectbox("SELEZIONA CLIENTE", ["-"] + list({x['label']: x for x in inbox}.keys()))
         
         if sel != "-":
-            # Session State per Editing
-            if 'curr_label' not in st.session_state or st.session_state['curr_label'] != sel:
+            # --- FIX CRASH SESSION STATE ---
+            # Se la cache è vecchia (contiene chiavi minuscole), forziamo il ricaricamento
+            raw_data = {x['label']: x['data'] for x in inbox}[sel]
+            
+            if 'd' not in st.session_state or st.session_state.get('curr_label') != sel or 'Nome' not in st.session_state['d']:
                 st.session_state['curr_label'] = sel
-                st.session_state['d'] = {x['label']: x['data'] for x in inbox}[sel]
+                st.session_state['d'] = raw_data
             
             d = st.session_state['d']
 
-            # --- FORM DI EDITING (SPECCHIO DEL TALLY) ---
-            st.markdown(f"### 👤 {d['Nome']} {d['Cognome']}")
+            # --- FORM DI EDITING ---
+            st.markdown(f"### 👤 {d.get('Nome','')} {d.get('Cognome','')}")
             
             with st.expander("1. ANAGRAFICA & CONTATTI", expanded=True):
                 c1, c2, c3 = st.columns(3)
-                d['CF'] = c1.text_input("Codice Fiscale", value=d['CF'])
-                d['Indirizzo'] = c2.text_input("Indirizzo", value=d['Indirizzo'])
-                d['DataNascita'] = c3.text_input("Data Nascita", value=d['DataNascita'])
-                d['Email'] = st.text_input("Email", value=d['Email'])
+                d['CF'] = c1.text_input("Codice Fiscale", value=d.get('CF',''))
+                d['Indirizzo'] = c2.text_input("Indirizzo", value=d.get('Indirizzo',''))
+                d['DataNascita'] = c3.text_input("Data Nascita", value=d.get('DataNascita',''))
+                d['Email'] = st.text_input("Email", value=d.get('Email',''))
 
             with st.expander("2. MISURE (TUTTE)", expanded=True):
                 m1, m2, m3, m4 = st.columns(4)
@@ -233,7 +227,6 @@ def main():
                 d['Esclusioni'] = k2.text_area("Esclusioni Alimentari", value=d['Esclusioni'])
                 d['Integrazione'] = k2.text_area("Integrazione", value=d['Integrazione'])
                 
-                # Checkup Only fields
                 if d['NuoviSintomi'] or d['Stress']:
                     st.markdown("---")
                     st.caption("DATI CHECK-UP")
@@ -244,7 +237,7 @@ def main():
                     d['Forza'] = st.text_area("Note Forza", value=d['Forza'])
 
             with st.expander("4. LOGISTICA (GIORNI REALI)", expanded=True):
-                # QUI C'È IL CAMPO GIORNI EDITABILE CHE VOLEVI
+                # GIORNI COME TESTO EDITABILE
                 d['Giorni'] = st.text_input("Giorni Disponibili (Editabile)", value=d['Giorni'])
                 c_log1, c_log2 = st.columns(2)
                 d['Minuti'] = c_log1.number_input("Minuti Sessione", value=d['Minuti'])
@@ -326,7 +319,6 @@ def main():
                 if st.button("💾 SALVA"):
                     try:
                         db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                        # Salva Nome + Cognome
                         full_name = f"{d.get('Nome','')} {d.get('Cognome','')}"
                         db.append_row([datetime.now().strftime("%Y-%m-%d"), d['Email'], full_name, json.dumps(st.session_state['plan'])])
                         st.success("SALVATO!")
