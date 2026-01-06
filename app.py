@@ -4,19 +4,18 @@ import numpy as np
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import openai
 import json
-import requests
 from datetime import datetime
 from rapidfuzz import process, fuzz
+import re
 
 # ==============================================================================
-# 0. CONFIGURAZIONE & ASSETS
+# 0. CONFIGURAZIONE SISTEMA & ASSETS
 # ==============================================================================
 
 st.set_page_config(
-    page_title="AREA 199 LAB",
+    page_title="AREA 199 LAB | DEPLOY",
     page_icon="🩸",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -26,520 +25,404 @@ st.set_page_config(
 st.markdown("""
     <style>
     /* Global */
-    .stApp { background-color: #050505; color: #e0e0e0; font-family: 'Roboto', sans-serif; }
+    .stApp { background-color: #050505; color: #e0e0e0; font-family: 'Roboto Mono', monospace; }
     
     /* Sidebar */
-    [data-testid="stSidebar"] { background-color: #000000; border-right: 1px solid #330000; }
+    [data-testid="stSidebar"] { background-color: #000000; border-right: 1px solid #E20613; }
     
-    /* Inputs & Widgets */
+    /* Inputs */
     .stTextInput>div>div>input, .stNumberInput>div>div>input, .stTextArea>div>div>textarea {
-        background-color: #111; color: #fff; border: 1px solid #444; border-radius: 4px;
+        background-color: #111; color: #fff; border: 1px solid #333; border-radius: 0px;
     }
     .stSelectbox>div>div>div { background-color: #111; color: #fff; }
-    /* Slider colors */
-    .stSlider>div>div>div>div { background-color: #8b0000; }
     
     /* Buttons */
     .stButton>button {
-        background-color: #8b0000; color: white; border: none; font-weight: 700;
-        text-transform: uppercase; letter-spacing: 1px; width: 100%;
-        transition: all 0.3s ease;
+        background-color: transparent; color: #E20613; border: 1px solid #E20613; 
+        font-weight: 700; text-transform: uppercase; width: 100%; transition: all 0.3s;
     }
-    .stButton>button:hover { background-color: #ff0000; box-shadow: 0 0 10px #ff0000; }
+    .stButton>button:hover { background-color: #E20613; color: white; box-shadow: 0 0 15px #E20613; border-color: #E20613; }
     
     /* Typography */
-    h1, h2, h3 { color: #ff3333; text-transform: uppercase; font-weight: 800; }
-    h4, h5 { color: #cccccc; font-weight: 600; }
+    h1, h2, h3 { color: #E20613; text-transform: uppercase; font-weight: 800; letter-spacing: -1px; }
+    .highlight { color: #E20613; font-weight: bold; }
     
-    /* Cards */
-    .report-card {
-        background-color: #0f0f0f; border-left: 3px solid #cc0000; padding: 15px;
-        margin-bottom: 15px; border-radius: 0 5px 5px 0;
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader { background-color: #1a1a1a; color: white; font-weight: bold; }
-    hr { border-color: #333; }
+    /* Custom Containers */
+    .metric-card { background: #0f0f0f; border-left: 3px solid #E20613; padding: 10px; margin: 5px 0; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. GESTIONE DATABASE & API
+# 1. DATA LAYER (GOOGLE SHEETS + TALLY INTEGRATION)
 # ==============================================================================
 
 @st.cache_resource
-def get_db():
+def get_db_connection():
     """Connessione persistente a Google Sheets."""
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
         client = gspread.authorize(creds)
-        sh = client.open("AREA199_DB")
-        return sh
+        # Apre il file spreadsheet principale
+        return client.open("AREA199_DB") # Assicurati che il nome del file su Drive sia ESATTO
     except Exception as e:
-        st.error(f"❌ ERRORE CRITICO DATABASE: {e}")
+        st.error(f"❌ DATABASE DISCONNECTED: {e}")
         st.stop()
 
-@st.cache_data
-def get_exercise_db():
-    """Scarica e cachare il DB Esercizi di GitHub."""
-    url = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
+def get_tally_data(client_sheet):
+    """
+    Recupera e fonde i dati da Anamnesi e Check-up in un'unica Inbox.
+    Restituisce una lista di dizionari ordinata per data.
+    """
     try:
-        r = requests.get(url)
-        return r.json() if r.status_code == 200 else []
-    except:
+        # Fogli Tally (Assumendo che siano nello stesso file o file diversi mappati)
+        # Qui assumiamo che tu abbia copiato i fogli Tally dentro "AREA199_DB" o usiamo file separati
+        # PER SEMPLICITA': Assumiamo che i fogli si chiamino così nel tuo DB
+        ws_anamnesi = client_sheet.worksheet("BIO_ENTRY_ANAMNESI")
+        ws_checkup = client_sheet.worksheet("BIO_CHECK_UP")
+        
+        df_ana = pd.DataFrame(ws_anamnesi.get_all_records())
+        df_check = pd.DataFrame(ws_checkup.get_all_records())
+        
+        inbox = []
+        
+        # Process Anamnesi
+        for _, row in df_ana.iterrows():
+            inbox.append({
+                "source": "ANAMNESI",
+                "label": f"🆕 {row.get('Nome', 'Unknown')} {row.get('Cognome', '')} - {row.get('Submitted at', '')[:10]}",
+                "data": row,
+                "timestamp": row.get('Submitted at', '')
+            })
+            
+        # Process Checkup
+        for _, row in df_check.iterrows():
+            inbox.append({
+                "source": "CHECKUP",
+                "label": f"🔄 {row.get('Nome', 'Unknown')} {row.get('Cognome', '')} - {row.get('Submitted at', '')[:10]}",
+                "data": row,
+                "timestamp": row.get('Submitted at', '')
+            })
+            
+        # Ordina dal più recente
+        inbox.sort(key=lambda x: x['timestamp'], reverse=True)
+        return inbox
+    except Exception as e:
+        st.warning(f"⚠️ Impossibile recuperare Tally Inbox: {e}")
         return []
 
+def clean_numeric(val):
+    """Pulisce stringhe sporche (es. '75 kg' -> 75.0)."""
+    if pd.isna(val) or val == "": return 0.0
+    s = str(val).lower().replace(',', '.')
+    # Estrae solo i numeri float
+    match = re.search(r"[-+]?\d*\.\d+|\d+", s)
+    return float(match.group()) if match else 0.0
+
 # ==============================================================================
-# 2. MOTORE MATEMATICO (HARD SCIENCE)
+# 2. SCIENCE ENGINE (CALCOLI BIOMETRICI)
 # ==============================================================================
 
-class ScienceEngine:
-    @staticmethod
-    def calc_bf_navy(sex, waist, neck, height, hips=0):
-        """Calcolo BF% Navy Method."""
-        try:
+def calc_metrics(sex, w, h, neck, waist, hips=0):
+    """Calcola BF% (Navy) e FFMI."""
+    bf = 0.0
+    try:
+        if w > 0 and h > 0 and neck > 0 and waist > 0:
             if sex == "Uomo":
-                val = 86.010 * np.log10(waist - neck) - 70.041 * np.log10(height) + 36.76
+                bf = 86.010 * np.log10(waist - neck) - 70.041 * np.log10(h) + 36.76
             else:
-                val = 163.205 * np.log10(waist + hips - neck) - 97.684 * np.log10(height) - 78.387
-            return round(max(2.0, val), 2)
-        except:
-            return 0.0
-
-    @staticmethod
-    def calc_ffmi(weight, height_cm, bf):
-        """Calcolo Fat Free Mass Index."""
-        h_m = height_cm / 100
-        lean = weight * (1 - (bf/100))
-        return round(lean / (h_m**2), 2)
-
-    @staticmethod
-    def calc_somatotype(sex, height, wrist, bf, ffmi, waist, hips):
-        """Logica a punteggio per Somatotipo."""
-        scores = {"Ectomorfo": 0, "Mesomorfo": 0, "Endomorfo": 0}
+                bf = 163.205 * np.log10(waist + hips - neck) - 97.684 * np.log10(h) - 78.387
+    except: pass
+    
+    bf = max(3.0, round(bf, 1))
+    ffmi = 0.0
+    if h > 0:
+        lean = w * (1 - (bf/100))
+        h_m = h / 100
+        ffmi = round(lean / (h_m**2), 1)
         
-        h_wrist = height / wrist if wrist > 0 else 0
-        w_h = waist / hips if hips > 0 else 0
+    return bf, ffmi
 
-        # Ectomorfo
-        th_wrist = 10.4 if sex == "Uomo" else 11.0
-        if h_wrist > th_wrist:
-            scores["Ectomorfo"] += 2
-            if ffmi < 19: scores["Ectomorfo"] += 2
-
-        # Mesomorfo
-        if ffmi > 20:
-            scores["Mesomorfo"] += 2
-            if bf < 15: scores["Mesomorfo"] += 2
-
-        # Endomorfo
-        th_bf = 20 if sex == "Uomo" else 28
-        if bf > th_bf:
-            scores["Endomorfo"] += 2
-            if w_h > 0.9: scores["Endomorfo"] += 2
-            
-        return max(scores, key=scores.get)
+def determine_somatotype(bf, ffmi, w_h_ratio):
+    """Algoritmo decisionale per il fenotipo."""
+    scores = {"Ectomorfo": 0, "Mesomorfo": 0, "Endomorfo": 0}
+    
+    # Logica FFMI
+    if ffmi < 19: scores["Ectomorfo"] += 3
+    elif ffmi > 21: scores["Mesomorfo"] += 3
+    else: scores["Endomorfo"] += 1
+    
+    # Logica BF
+    if bf < 12: scores["Ectomorfo"] += 2
+    elif bf < 18: scores["Mesomorfo"] += 2
+    else: scores["Endomorfo"] += 3
+    
+    return max(scores, key=scores.get)
 
 # ==============================================================================
-# 3. UTILS & AI WRAPPER (FIXED IMAGES & PROMPT)
+# 3. AI ENGINE (OPENAI)
 # ==============================================================================
 
-def find_image_urls(name_en, db_json):
+def generate_ai_protocol(profile_data):
+    """Genera il protocollo JSON tramite GPT-4."""
+    
+    system_prompt = """
+    Sei il Dott. Antonio Petruzzi, Head Coach di AREA199. 
+    Filosofia: Hard Science, No Bullshit, Evidence-Based.
+    
+    IL TUO COMPITO:
+    Creare una scheda di allenamento altamente personalizzata basata sui dati biometrici.
+    
+    REGOLE DI OUTPUT:
+    1. Restituisci SOLO un JSON valido.
+    2. Struttura JSON richiesta:
+       {
+         "analisi_clinica": "Testo analisi...",
+         "focus_mesociclo": "Es. Ipertrofia Miofibrillare",
+         "protocollo_cardio": "Es. 20min LISS post-workout",
+         "tabella": {
+            "Giorno 1 - Push": [
+                {"esercizio": "Panca Piana", "sets": "4", "reps": "6-8", "tut": "3-0-1-0", "rest": "120s", "note": "Arco toracico attivo"}
+            ]
+         }
+       }
+    3. Adatta il volume al Somatotipo:
+       - Ectomorfo: Volume basso, Intensità alta.
+       - Endomorfo: Volume alto, Densità alta (recuperi brevi).
     """
-    Fuzzy match per trovare le immagini.
-    Restituisce una LISTA di URL assoluti (fino a 2).
+    
+    user_prompt = f"""
+    DATI ATLETA:
+    - Nome: {profile_data['nome']}
+    - Sesso: {profile_data['sesso']}
+    - Biometria: Peso {profile_data['peso']}kg, BF {profile_data['bf']}%, FFMI {profile_data['ffmi']}
+    - Somatotipo: {profile_data['somatotipo']}
+    - Obiettivo: {profile_data['obiettivi']}
+    - Infortuni/Limitazioni: {profile_data['infortuni']}
+    - Disponibilità: {profile_data['giorni']} giorni/settimana, {profile_data['durata']} min/sessione.
+    
+    Se ci sono infortuni segnalati, ESCLUDI esercizi che colpiscono quella zona o suggerisci varianti sicure.
     """
-    if not name_en or not db_json: return []
     
-    BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
-    
-    names = [x['name'] for x in db_json]
-    match = process.extractOne(name_en, names, scorer=fuzz.token_sort_ratio)
-    
-    valid_urls = []
-    if match and match[1] > 65: # Soglia tolleranza
-        actual_name = match[0]
-        for item in db_json:
-            if item['name'] == actual_name:
-                imgs = item.get('images', [])
-                if imgs:
-                    # Prende fino alle prime 2 immagini disponibili
-                    for img_path in imgs[:2]:
-                        valid_urls.append(BASE_URL + img_path)
-                    return valid_urls
-    return []
-
-def generate_workout(profile):
-    """Prompt Engineering AGGIORNATO: Logica Volume Rigida + Tutorial."""
-    
-    # Calcolo dinamico del numero minimo di esercizi basato sulla durata
-    min_exercises = 4
-    if profile['min'] >= 90:
-        min_exercises = 8
-    elif profile['min'] >= 60:
-        min_exercises = 6
-    elif profile['min'] >= 45:
-        min_exercises = 5
-        
-    prompt = f"""
-    Sei il Dott. Antonio Petruzzi. Ruolo: Partner tecnico d'élite AREA 199.
-    Tono: Hard Science, Severo, Tecnico.
-    
-    PROFILO ATLETA:
-    - Nome: {profile['nome']}
-    - Somatotipo: {profile['soma']} (BF: {profile['bf']}%, FFMI: {profile['ffmi']})
-    - Obiettivi: {profile['goals']}
-    - Infortuni: {profile['inf']} (ESCLUDI TASSATIVAMENTE QUESTE PARTI)
-    - Logistica: {profile['days']} giorni/sett, {profile['min']} min/seduta.
-    
-    REGOLA FERREA SUL VOLUME (Time-Filling Logic):
-    L'atleta DEVE allenarsi per {profile['min']} minuti reali.
-    Per riempire questo tempo, DEVI prescrivere ALMENO {min_exercises} ESERCIZI per ogni seduta.
-    Se metti meno di {min_exercises} esercizi, il protocollo sarà RIFIUTATO.
-    
-    LOGICA SOMATOTIPO:
-    1. Ectomorfo: Focus Tensione Meccanica. Recuperi ampi. NO Drop set.
-    2. Endomorfo: Focus Stress Metabolico. Alta densità. Recuperi brevi (<60s).
-    3. Mesomorfo: Alto Volume. Tecniche d'intensità permesse.
-    
-    OUTPUT JSON RIGIDO:
-    {{
-        "analisi_clinica": "Analisi...",
-        "note_tecniche": "Note...",
-        "protocollo_cardio": "Dettagli...",
-        "tabella": {{
-            "Giorno 1 - [Focus]": [
-                {{
-                    "nome_it": "Nome Italiano",
-                    "nome_en": "Standard English Name",
-                    "tutorial": "Minitutorial tecnico. Es: 'Gomiti stretti, picco contrazione 1s, scendi in 3s'.",
-                    "sets": "4",
-                    "reps": "8-10",
-                    "tut": "3-0-1-0",
-                    "rest": "90s",
-                    "note": "Cue tecnico"
-                }},
-                ... (Inserire almeno {min_exercises} esercizi qui)
-            ],
-            ... (Ripetere per tutti i {profile['days']} giorni)
-        }}
-    }}
-    """
     try:
         client = openai.Client(api_key=st.secrets["openai_key"])
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "system", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
             response_format={"type": "json_object"},
             temperature=0.7
         )
         return json.loads(response.choices[0].message.content)
     except Exception as e:
-        st.error(f"Errore AI Generation: {e}")
+        st.error(f"AI Error: {e}")
         return None
 
 # ==============================================================================
-# 4. UI COMPONENTS (RENDERER UNICO FIX IMAGES)
-# ==============================================================================
-
-def render_dashboard(data_json, meta, history_df=None):
-    """Visualizza la scheda con Tutorial e Immagini."""
-    # HEADER
-    st.markdown(f"## 🧬 PROTOCOLLO: {meta.get('mesociclo', 'N/A')}")
-    col_h1, col_h2 = st.columns(2)
-    col_h1.caption(f"ATLETA: **{meta.get('nome', 'Unknown')}**")
-    col_h2.caption(f"SOMATOTIPO: **{meta.get('somatotipo', 'N/A')}**")
-    
-    st.divider()
-
-    # 1. REPORT CLINICO
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"""
-        <div class="report-card">
-            <h4>📋 ANALISI CLINICA</h4>
-            <p>{data_json.get('analisi_clinica', 'N/A')}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"""
-        <div class="report-card">
-            <h4>🚴 PROTOCOLLO CARDIO & NOTE</h4>
-            <p><b>CARDIO:</b> {data_json.get('protocollo_cardio', 'N/A')}</p>
-            <hr>
-            <p><b>NOTE:</b> {data_json.get('note_tecniche', 'N/A')}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # 2. TABELLE ALLENAMENTO
-    ex_db = get_exercise_db()
-    schedule = data_json.get('tabella', {})
-    
-    if not schedule:
-        st.warning("Nessuna tabella generata.")
-        return
-
-    for day, exercises in schedule.items():
-        with st.expander(f"🔴 {day}", expanded=True):
-            for ex in exercises:
-                ec1, ec2 = st.columns([1, 3])
-                
-                
-                # Immagini (Gestione Multipla)
-                with ec1:
-                    img_urls = find_image_urls(ex.get('nome_en'), ex_db)
-                    if img_urls:
-                        # Streamlit accetta una lista di URL e li mostra impilati
-                        st.image(img_urls, use_container_width=True)
-                    else:
-                        st.markdown(f"<div style='height:100px; background:#111; display:flex; align-items:center; justify-content:center; color:#555; font-size:0.8em;'>NO IMAGE</div>", unsafe_allow_html=True)
-                
-                # Dati Esercizio
-                with ec2:
-                    st.markdown(f"### {ex.get('nome_it', 'Esercizio')}")
-                    if ex.get('nome_en'):
-                        st.caption(f"EN: *{ex.get('nome_en')}*")
-                    
-                    # Griglia dati tecnici
-                    gc1, gc2, gc3, gc4 = st.columns(4)
-                    gc1.markdown(f"**SETS:** {ex.get('sets', '-')}")
-                    gc2.markdown(f"**REPS:** {ex.get('reps', '-')}")
-                    gc3.markdown(f"**TUT:** {ex.get('tut', '-')}")
-                    gc4.markdown(f"**REST:** {ex.get('rest', '-')}")
-                    
-                    if ex.get('note'):
-                        st.info(f"💡 {ex['note']}")
-                st.markdown("---")
-
-    # 3. GRAFICI (Se presenti dati storici)
-    if history_df is not None and not history_df.empty:
-        st.markdown("## 📈 TREND ANALYSIS")
-        
-        cols_num = ['Peso', 'Vita', 'Braccio Dx', 'Braccio Sx', 'Coscia Dx', 'Coscia Sx']
-        for c in cols_num:
-            # Gestione errori conversione e riempimento NaN
-            history_df[c] = pd.to_numeric(history_df[c], errors='coerce').fillna(0)
-        
-        # Grafico 1: Peso vs Vita
-        fig1 = make_subplots(specs=[[{"secondary_y": True}]])
-        fig1.add_trace(go.Scatter(x=history_df['Data'], y=history_df['Peso'], name="Peso (kg)", line=dict(color='#ff0000', width=3)), secondary_y=False)
-        fig1.add_trace(go.Scatter(x=history_df['Data'], y=history_df['Vita'], name="Vita (cm)", line=dict(color='#cccccc', dash='dot')), secondary_y=True)
-        fig1.update_layout(title="Composizione Corporea", template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
-        st.plotly_chart(fig1, use_container_width=True)
-        
-        # Grafico 2: Simmetrie (Ultima rilevazione valida)
-        if len(history_df) > 0:
-            last = history_df.iloc[-1]
-            fig2 = go.Figure()
-            fig2.add_trace(go.Bar(x=['Braccia', 'Cosce'], y=[last['Braccio Sx'], last['Coscia Sx']], name='Sinistra', marker_color='#cc0000'))
-            fig2.add_trace(go.Bar(x=['Braccia', 'Cosce'], y=[last['Braccio Dx'], last['Coscia Dx']], name='Destra', marker_color='#333333'))
-            fig2.update_layout(title=f"Analisi Simmetria (Check del {last['Data']})", template="plotly_dark", barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig2, use_container_width=True)
-
-# ==============================================================================
-# 5. MAIN APP FLOW
+# 4. APP PRINCIPALE
 # ==============================================================================
 
 def main():
-    # Sidebar Login
+    # --- SIDEBAR & LOGIN ---
     with st.sidebar:
-        try:
-            st.image("assets/logo.png", use_container_width=True)
-        except:
-            st.title("AREA 199")
-            
-        st.markdown("### AREA RISERVATA")
-        role = st.selectbox("Identità", ["-", "Coach Admin", "Atleta"])
-        pwd = st.text_input("Password", type="password")
+        st.title("AREA 199")
+        st.markdown("---")
+        role = st.selectbox("IDENTITÀ OPERATIVA", ["-", "Coach Admin", "Atleta"])
+        pwd = st.text_input("ACCESS KEY", type="password")
         
+        # Connessione DB (Lazy loading)
+        db = None
         if role != "-":
-            db = get_db() # Connette al DB solo se si tenta login
+            db = get_db_connection()
 
-    # --------------------------------------------------------------------------
-    # FLUSSO COACH
-    # --------------------------------------------------------------------------
+    # --- VISTA: COACH ADMIN ---
     if role == "Coach Admin" and pwd == "PETRUZZI199":
-        st.sidebar.success("🟢 ADMIN CONNECTED")
+        st.sidebar.success("SYSTEM ONLINE")
         
-        tab_new, tab_db = st.tabs(["📝 NUOVO PROTOCOLLO", "🗃️ DATABASE RAW"])
+        # --- SEZIONE 1: INGESTION (IL PONTE TALLY) ---
+        st.markdown("## 📥 DATA INGESTION SUITE")
         
-        with tab_new:
-            st.title("GENERATORE PROTOCOLLI // HARD SCIENCE")
-            
-            # --- INPUT DATA ---
-            with st.expander("1. DATI ANAGRAFICI & MISURE", expanded=True):
-                c1, c2, c3, c4 = st.columns(4)
-                nome = c1.text_input("Nome Atleta")
-                email = c2.text_input("Email")
-                sesso = c3.selectbox("Sesso", ["Uomo", "Donna"])
-                eta = c4.number_input("Età", 18, 90, 30)
+        # Carica inbox
+        inbox = get_tally_data(db)
+        # Mappa label -> oggetto dati
+        options_map = {item['label']: item for item in inbox}
+        
+        c_sel, c_btn = st.columns([3, 1])
+        selected_label = c_sel.selectbox("Seleziona Submission Tally", ["-"] + list(options_map.keys()))
+        
+        if c_btn.button("⬇️ IMPORTA & PARSA", use_container_width=True):
+            if selected_label != "-":
+                raw_data = options_map[selected_label]['data']
+                source_type = options_map[selected_label]['source']
                 
-                st.markdown("---")
-                m1, m2, m3, m4, m5, m6 = st.columns(6)
-                peso = m1.number_input("Peso (kg)", 40.0, 150.0, 75.0)
-                alt = m2.number_input("Altezza (cm)", 140.0, 230.0, 175.0)
-                collo = m3.number_input("Collo", 20.0, 60.0, 38.0)
-                vita = m4.number_input("Vita", 40.0, 150.0, 80.0)
-                fianchi = m5.number_input("Fianchi", 40.0, 150.0, 95.0)
-                polso = m6.number_input("Polso", 10.0, 25.0, 17.0)
+                # --- LOGICA DI MAPPING INTELLIGENTE ---
+                # Mappiamo i campi Tally nel session_state per renderli editabili
+                st.session_state['f_nome'] = raw_data.get('Nome', '')
+                st.session_state['f_email'] = raw_data.get('E-mail', '') or raw_data.get('Email', '')
                 
-                st.markdown("---")
-                l1, l2, l3, l4, l5, l6 = st.columns(6)
-                torace = l1.number_input("Torace", 60.0, 150.0, 100.0)
-                caviglia = l2.number_input("Caviglia", 15.0, 40.0, 22.0)
-                br_dx = l3.number_input("Braccio Dx", 20.0, 60.0, 35.0)
-                br_sx = l4.number_input("Braccio Sx", 20.0, 60.0, 35.0)
-                cg_dx = l5.number_input("Coscia Dx", 30.0, 90.0, 55.0)
-                cg_sx = l6.number_input("Coscia Sx", 30.0, 90.0, 55.0)
+                # Parsing misure (Tally headers -> Session State)
+                st.session_state['f_peso'] = clean_numeric(raw_data.get('Peso Kg', 0))
                 
-                # BOTTONE ARCHIVIA MISURE (SHEET 2)
-                if st.button("💾 ARCHIVIA MISURE NEL DB STORICO"):
-                    if nome:
-                        try:
-                            sheet2 = db.worksheet("Storico_Misure")
-                            row = [
-                                datetime.now().strftime("%Y-%m-%d"), nome, peso, collo, vita, fianchi, 
-                                polso, caviglia, torace, br_dx, br_sx, cg_dx, cg_sx
-                            ]
-                            sheet2.append_row(row)
-                            st.toast(f"Misure archiviate per {nome}", icon="✅")
-                        except Exception as e:
-                            st.error(f"Errore salvataggio storico: {e}")
-                    else:
-                        st.warning("Inserire Nome.")
-
-            with st.expander("2. PARAMETRI CLINICI & LOGISTICA", expanded=True):
-                k1, k2 = st.columns(2)
-                # Multifrequenza rimosso come input diretto, gestito dalla logica giorni dell'AI
-                giorni = k1.multiselect("Giorni", ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"], ["Lun", "Mer", "Ven"])
-                durata = k1.slider("Durata Seduta (min)", 30, 150, 60, step=5)
+                # Check source type per altezza (spesso solo in anamnesi)
+                if 'Altezza in cm' in raw_data:
+                    st.session_state['f_alt'] = clean_numeric(raw_data['Altezza in cm'])
                 
-                obiettivi = k2.multiselect("Obiettivi", ["Ipertrofia", "Dimagrimento", "Forza", "Ricomposizione", "Pre-Season"])
-                infortuni = k2.text_area("Limitazioni / Infortuni (Cruciale)", "Nessuna")
-            
-            # --- CALCOLO MOTORE ---
-            bf = ScienceEngine.calc_bf_navy(sesso, vita, collo, alt, fianchi)
-            ffmi = ScienceEngine.calc_ffmi(peso, alt, bf)
-            soma = ScienceEngine.calc_somatotype(sesso, alt, polso, bf, ffmi, vita, fianchi)
-            
-            st.info(f"🧬 ANALISI COMPUTAZIONALE: BF {bf}% | FFMI {ffmi} | SOMATOTIPO: {soma}")
-            
-            # --- GENERAZIONE ---
-            if st.button("🚀 GENERA PROTOCOLLO (AI)"):
-                if not nome or len(giorni) == 0:
-                    st.error("Nome e almeno un giorno di allenamento sono obbligatori.")
+                # Misure Circonferenze
+                st.session_state['f_collo'] = clean_numeric(raw_data.get('Collo in cm', 0))
+                st.session_state['f_vita'] = clean_numeric(raw_data.get('Addome cm', 0)) # O Vita
+                st.session_state['f_fianchi'] = clean_numeric(raw_data.get('Fianchi cm', 0))
+                
+                # Campi testuali lunghi
+                # Se è checkup, gli infortuni sono 'Nuovi Sintomi', se anamnesi 'Disfunzioni...'
+                if source_type == 'ANAMNESI':
+                    st.session_state['f_inf'] = str(raw_data.get('Disfunzioni Patomeccaniche Note', 'Nessuna')) + " " + str(raw_data.get('Anamnesi Meccanopatica (Overuse)', ''))
+                    st.session_state['f_obiettivi'] = str(raw_data.get('Obiettivi a Breve/Lungo Termine', 'Ipertrofia'))
                 else:
-                    with st.spinner("Elaborazione Dott. Petruzzi in corso..."):
-                        prof = {
-                            "nome": nome, "soma": soma, "bf": bf, "ffmi": ffmi,
-                            "goals": ", ".join(obiettivi), "inf": infortuni,
-                            "days": len(giorni), "min": durata
-                        }
-                        workout = generate_workout(prof)
-                        
-                        if workout:
-                            st.session_state['temp_workout'] = workout
-                            st.session_state['temp_meta'] = {
-                                "nome": nome, "email": email, "mesociclo": datetime.now().strftime("%B %Y"),
-                                "somatotipo": soma,
-                                "analisi_clinica": workout.get("analisi_clinica"),
-                                "target_cardio": workout.get("protocollo_cardio"),
-                                "note_tecniche": workout.get("note_tecniche")
-                            }
-                            st.rerun()
-
-            # --- PREVIEW & SAVE ---
-            if 'temp_workout' in st.session_state:
-                st.markdown("---")
-                st.warning("⚠️ MODE: ANTEPRIMA (Non salvato)")
+                    st.session_state['f_inf'] = str(raw_data.get('Nuovi Sintomi', 'Nessuno'))
+                    # Nel checkup magari manteniamo l'obiettivo precedente (manuale) o leggiamo note
                 
-                # Render Preview
-                render_dashboard(st.session_state['temp_workout'], st.session_state['temp_meta'])
-                
-                if st.button("✅ CONFERMA E SALVA NEL DB SCHEDE"):
-                    try:
-                        sheet1 = db.sheet1 # Default sheet
-                        meta = st.session_state['temp_meta']
-                        # Struttura: Data, Email, Nome, Mesociclo, Target_Cardio, Note, Analisi, JSON
-                        row_data = [
-                            datetime.now().strftime("%Y-%m-%d"),
-                            meta['email'], meta['nome'], meta['mesociclo'],
-                            meta['target_cardio'], meta['note_tecniche'], meta['analisi_clinica'],
-                            json.dumps(st.session_state['temp_workout'])
-                        ]
-                        sheet1.append_row(row_data)
-                        st.success(f"PROTOCOLLO PER {meta['nome'].upper()} ATTIVATO.")
-                        del st.session_state['temp_workout'] # Reset
-                        del st.session_state['temp_meta']
-                    except Exception as e:
-                        st.error(f"Errore DB: {e}")
-
-        with tab_db:
-            st.markdown("### VISUALIZZAZIONE DATI GREZZI (DEBUG)")
-            if st.button("Aggiorna DB View"):
-                st.dataframe(pd.DataFrame(db.sheet1.get_all_records()))
-
-    # --------------------------------------------------------------------------
-    # FLUSSO ATLETA
-    # --------------------------------------------------------------------------
-    elif role == "Atleta" and pwd == "AREA199":
-        st.sidebar.success("⚪ ATHLETE CONNECTED")
+                st.toast(f"Dati importati da {source_type}", icon="✅")
         
-        u_email = st.text_input("Inserisci la tua Email:")
-        if st.button("ACCEDI AL PROTOCOLLO"):
-            if u_email:
+        st.divider()
+
+        # --- SEZIONE 2: HUMAN REVIEW & EDITING (IL CUORE) ---
+        st.markdown("## 🛠️ WORKSTATION (HUMAN REVIEW)")
+        
+        with st.container():
+            # Riga 1: Anagrafica
+            c1, c2, c3, c4 = st.columns(4)
+            # Usa .get() per gestire il primo caricamento o il reset
+            p_nome = c1.text_input("Nome", value=st.session_state.get('f_nome', ''))
+            p_email = c2.text_input("Email", value=st.session_state.get('f_email', ''))
+            p_sesso = c3.selectbox("Sesso", ["Uomo", "Donna"]) # Default manuale se non in Tally checkup
+            p_eta = c4.number_input("Età", 18, 90, 30)
+
+            st.markdown("###### 📐 METROLOGIA")
+            # Riga 2: Misure
+            m1, m2, m3, m4, m5 = st.columns(5)
+            p_peso = m1.number_input("Peso (kg)", 0.0, 150.0, float(st.session_state.get('f_peso', 75.0)))
+            p_alt = m2.number_input("Altezza (cm)", 0.0, 230.0, float(st.session_state.get('f_alt', 175.0)))
+            p_collo = m3.number_input("Collo (cm)", 0.0, 60.0, float(st.session_state.get('f_collo', 38.0)))
+            p_vita = m4.number_input("Vita (cm)", 0.0, 150.0, float(st.session_state.get('f_vita', 80.0)))
+            p_fianchi = m5.number_input("Fianchi (cm)", 0.0, 150.0, float(st.session_state.get('f_fianchi', 95.0)))
+            
+            # Calcolo Live Science
+            bf, ffmi = calc_metrics(p_sesso, p_peso, p_alt, p_collo, p_vita, p_fianchi)
+            w_h = p_vita / p_fianchi if p_fianchi > 0 else 0.85
+            soma = determine_somatotype(bf, ffmi, w_h)
+            
+            # Visualizzazione Science
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.markdown(f"<div class='metric-card'>🧬 BF: <b>{bf}%</b></div>", unsafe_allow_html=True)
+            sc2.markdown(f"<div class='metric-card'>💪 FFMI: <b>{ffmi}</b></div>", unsafe_allow_html=True)
+            sc3.markdown(f"<div class='metric-card'>🩸 TIPO: <b>{soma}</b></div>", unsafe_allow_html=True)
+
+            st.markdown("###### 🧠 LOGICA PROGRAMMAZIONE")
+            # Riga 3: Logica
+            l1, l2 = st.columns(2)
+            p_giorni = l1.slider("Frequenza (Giorni/Sett)", 2, 7, 4)
+            p_durata = l1.slider("Durata Sessione (min)", 30, 120, 60)
+            
+            # Qui il coach può editare le "follie" scritte dal cliente
+            p_obiettivi = l2.text_area("Obiettivo Tecnico", value=st.session_state.get('f_obiettivi', 'Ricomposizione'), height=68)
+            p_inf = l2.text_area("Infortuni / Note Mediche (Cruciale per AI)", value=st.session_state.get('f_inf', 'Nessuna'), height=68)
+
+        st.divider()
+
+        # --- SEZIONE 3: GENERAZIONE & SAVE ---
+        st.markdown("## 🚀 DEPLOY")
+        
+        if st.button("GENERA PROTOCOLLO AREA199 (AI)"):
+            with st.spinner("Elaborazione Algoritmo Genetico in corso..."):
+                # Pacchetto dati per l'AI (Pulito e Validato dall'Umano)
+                payload = {
+                    "nome": p_nome, "sesso": p_sesso,
+                    "peso": p_peso, "bf": bf, "ffmi": ffmi, "somatotipo": soma,
+                    "obiettivi": p_obiettivi, "infortuni": p_inf,
+                    "giorni": p_giorni, "durata": p_durata
+                }
+                
+                protocol_json = generate_ai_protocol(payload)
+                
+                if protocol_json:
+                    st.session_state['generated_protocol'] = protocol_json
+                    st.session_state['meta_protocol'] = payload # Salviamo anche i meta per il DB
+                    st.success("Protocollo Generato con Successo.")
+        
+        # Preview e Salvataggio
+        if 'generated_protocol' in st.session_state:
+            res = st.session_state['generated_protocol']
+            
+            with st.expander("👁️ ANTEPRIMA PROTOCOLLO", expanded=True):
+                st.subheader(res.get('focus_mesociclo', 'Focus Gen'))
+                st.info(f"ANALISI: {res.get('analisi_clinica')}")
+                
+                # Render semplice tabella
+                tabs = st.tabs(list(res.get('tabella', {}).keys()))
+                for i, day in enumerate(res.get('tabella', {})):
+                    with tabs[i]:
+                        df_ex = pd.DataFrame(res['tabella'][day])
+                        st.dataframe(df_ex, use_container_width=True, hide_index=True)
+
+            if st.button("💾 APPROVA E SALVA NEL DB"):
                 try:
-                    # Fetch Scheda (Sheet 1)
-                    sheet1 = db.sheet1
-                    all_recs = sheet1.get_all_records()
-                    # Filtro case-insensitive preciso
-                    my_recs = [r for r in all_recs if str(r.get('Email_Cliente')).strip().lower() == u_email.strip().lower()]
+                    # Logica salvataggio su Sheet "SCHEDE_ATTIVE" (da creare se non esiste)
+                    # Struttura: Data, Email, Nome, JSON_Completo
+                    ws_schede = db.worksheet("SCHEDE_ATTIVE") # Assicurati esista questo foglio
                     
-                    if not my_recs:
-                        st.error("Nessun protocollo attivo trovato per questa email.")
-                    else:
-                        last_rec = my_recs[-1] # Prendi l'ultima
-                        
-                        # Parsing JSON
-                        try:
-                            w_json = json.loads(last_rec['Link_Scheda'])
-                        except:
-                            st.error("Errore critico nel formato dati della scheda salvata.")
-                            st.stop()
-                            
-                        # Fetch Storico per Grafici (Sheet 2)
-                        sheet2 = db.worksheet("Storico_Misure")
-                        all_hist = sheet2.get_all_records()
-                        # Filtra storico per nome atleta
-                        df_hist = pd.DataFrame([r for r in all_hist if r.get('Nome') == last_rec['Nome']])
-                        
-                        # Metadata per rendering
-                        meta_info = {
-                            "nome": last_rec.get('Nome'),
-                            "mesociclo": last_rec.get('Mesociclo'),
-                            # Somatotipo non è salvato nel foglio 1, lo omettiamo o lo ricalcoliamo se necessario.
-                            # Per ora mostriamo quello che c'è.
-                            "somatotipo": "Clinical Defined", 
-                            "target_cardio": last_rec.get('Target_Cardio'),
-                            "note_tecniche": last_rec.get('Note_Tecniche'),
-                            "analisi_clinica": last_rec.get('Analisi_Clinica')
-                        }
-                        
-                        # RENDERIZZA TUTTO
-                        render_dashboard(w_json, meta_info, df_hist)
-                        
+                    row_export = [
+                        datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        p_email,
+                        p_nome,
+                        json.dumps(res) # Salviamo tutto il JSON in una cella per portabilità
+                    ]
+                    ws_schede.append_row(row_export)
+                    st.toast("Protocollo salvato e attivo per il cliente!", icon="🚀")
                 except Exception as e:
-                    st.error(f"Errore recupero dati: {e}")
+                    st.error(f"Errore Salvataggio DB: {e}")
+
+    # --- VISTA: ATLETA (SOLO LETTURA) ---
+    elif role == "Atleta" and pwd == "AREA199":
+        st.sidebar.success("LOGIN EFFETTUATO")
+        u_email = st.text_input("Inserisci la tua email:")
+        
+        if u_email and st.button("VISUALIZZA IL MIO PROGRAMMA"):
+            # Fetch dal DB
+            try:
+                ws_schede = db.worksheet("SCHEDE_ATTIVE")
+                data = ws_schede.get_all_records()
+                # Filtra per email (reverse per prendere l'ultimo)
+                user_schede = [x for x in data if str(x.get('Email', '')).strip().lower() == u_email.strip().lower()]
+                
+                if user_schede:
+                    last_scheda = user_schede[-1]
+                    json_plan = json.loads(last_scheda['JSON_Completo'])
+                    
+                    st.title(f"PROTOCOLLO: {json_plan.get('focus_mesociclo')}")
+                    st.markdown(f"*{last_scheda.get('Data')}*")
+                    st.success(json_plan.get('analisi_clinica'))
+                    
+                    st.divider()
+                    
+                    # Render Tabella Atleta
+                    for day, exercises in json_plan.get('tabella', {}).items():
+                        with st.expander(f"🔥 {day}", expanded=True):
+                            for ex in exercises:
+                                st.markdown(f"**{ex['esercizio']}**")
+                                c1, c2, c3 = st.columns(3)
+                                c1.caption(f"Sets: {ex['sets']} | Reps: {ex['reps']}")
+                                c2.caption(f"Rest: {ex['rest']} | TUT: {ex.get('tut', '-')}")
+                                c3.info(f"Note: {ex.get('note', '-')}")
+                                st.markdown("---")
+                else:
+                    st.warning("Nessuna scheda attiva trovata.")
+            except Exception as e:
+                st.error(f"Errore recupero scheda: {e}")
 
     elif role != "-":
         st.error("Credenziali non valide.")
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
