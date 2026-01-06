@@ -27,82 +27,51 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE BIO-MECCANICO & IMMAGINI (AGGIORNATO SECONDO SPECIFICA)
+# 1. MOTORE IMMAGINI & BIO-MECCANICA
 # ==============================================================================
 
 @st.cache_data
 def load_exercise_db():
-    """
-    Scarica il JSON del database open source richiesto.
-    """
     url = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
     try:
         response = requests.get(url)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.error(f"Errore download DB immagini: Status {response.status_code}")
-            return []
-    except Exception as e:
-        st.error(f"Errore connessione DB immagini: {e}")
-        return []
+        return response.json() if response.status_code == 200 else []
+    except: return []
 
 def find_exercise_images(name_query, db_exercises):
-    """
-    Cerca l'esercizio nel DB e ricostruisce l'URL completo concatenando BASE_URL + Partial Path.
-    """
     if not db_exercises or not name_query: return []
-    
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
-    
-    # Crea lista nomi dal DB
     db_names = [x['name'] for x in db_exercises]
-    
-    # Cerca il match migliore (Fuzzy Logic)
-    # token_set_ratio gestisce bene parole in ordine diverso (es. "Barbell Bench" vs "Bench Press Barbell")
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
     
-    images_found = []
-    
-    if match and match[1] > 65: # Soglia confidenza
+    if match and match[1] > 60:
         target_name = match[0]
         for ex in db_exercises:
             if ex['name'] == target_name:
-                # Estrae i percorsi parziali (es. "Biceps_Curl/0.jpg")
-                partial_paths = ex.get('images', [])
-                # Concatena con l'URL base
-                images_found = [BASE_URL + path for path in partial_paths]
-                break
-                
-    return images_found
+                return [BASE_URL + img for img in ex.get('images', [])]
+    return []
 
 def calc_somatotype_advanced(w, h, wrist, ankle):
-    """Stima Somatotipo basata su struttura ossea"""
-    if not w or not h: return "Non Calcolabile"
+    if not w or not h: return "N/A"
     h_m = h / 100
     bmi = w / (h_m**2)
     ratio_wrist = h / wrist if wrist > 0 else 0
-    soma = ""
-    if ratio_wrist > 10.5: soma = "Ectomorfo (Struttura Esile)"
-    elif ratio_wrist < 9.6: soma = "Endomorfo (Struttura Robusta)"
-    else: soma = "Mesomorfo (Struttura Media)"
+    soma = "Mesomorfo"
+    if ratio_wrist > 10.5: soma = "Ectomorfo"
+    elif ratio_wrist < 9.6: soma = "Endomorfo"
     if bmi > 25 and "Ectomorfo" in soma: soma += " (Skinny Fat)"
-    if bmi < 20 and "Endomorfo" in soma: soma = "Mesomorfo (Atipico)"
     return soma
 
 def suggest_split(days):
-    """Definisce lo split ottimale"""
-    try: d = int(days)
-    except: d = 3
-    if d <= 2: return "Full Body (A-B)"
+    d = int(days) if days else 3
+    if d <= 2: return "Full Body"
     if d == 3: return "Push / Pull / Legs"
-    if d == 4: return "Upper / Lower (x2)"
-    if d == 5: return "Upper / Lower / PPL"
-    if d >= 6: return "Push / Pull / Legs (x2)"
-    return "Custom"
+    if d == 4: return "Upper / Lower"
+    if d == 5: return "Hybrid (PPL + UL)"
+    return "PPL x2"
 
 # ==============================================================================
-# 2. UTILS DATI (CEMENTATO)
+# 2. ESTRAZIONE DATI (RISCRITTA SUI TUOI CAMPI ESATTI)
 # ==============================================================================
 
 @st.cache_resource
@@ -111,76 +80,103 @@ def get_client():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
     return gspread.authorize(creds)
 
-def normalize_text(text):
-    if not isinstance(text, str): return str(text)
-    return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
-
-def find_value_in_row(row, keywords):
-    row_normalized = {normalize_text(k): k for k in row.keys()}
-    for kw in keywords:
-        kw_norm = normalize_text(kw)
-        for col_norm_name, real_col_name in row_normalized.items():
-            if kw_norm in col_norm_name:
-                val = row[real_col_name]
-                if str(val).strip() != "": return val
-    return ""
-
 def clean_num(val):
     if not val: return 0.0
     s = str(val).replace(',', '.').replace('kg', '').replace('cm', '').strip()
     try: return float(re.search(r"[-+]?\d*\.\d+|\d+", s).group())
     except: return 0.0
 
-def extract_data(row, tipo):
+def normalize_key(key):
+    return re.sub(r'[^a-zA-Z0-9]', '', str(key).lower())
+
+def get_val(row, keywords, is_num=False):
+    """Cerca valore nella riga ignorando case e caratteri speciali"""
+    row_norm = {normalize_key(k): v for k, v in row.items()}
+    for kw in keywords:
+        kw_norm = normalize_key(kw)
+        # Cerca match parziale nella chiave normalizzata
+        for k_row, v_row in row_norm.items():
+            if kw_norm in k_row:
+                return clean_num(v_row) if is_num else str(v_row).strip()
+    return 0.0 if is_num else ""
+
+def extract_data_full(row, tipo):
     d = {}
-    d['nome'] = find_value_in_row(row, ['nome', 'name'])
-    d['cognome'] = find_value_in_row(row, ['cognome', 'surname'])
-    d['email'] = find_value_in_row(row, ['email', 'e-mail'])
-    d['peso'] = clean_num(find_value_in_row(row, ['pesokg', 'weight']))
-    d['altezza'] = clean_num(find_value_in_row(row, ['altezza', 'height']))
-    d['collo'] = clean_num(find_value_in_row(row, ['collo']))
-    d['torace'] = clean_num(find_value_in_row(row, ['torace']))
-    d['addome'] = clean_num(find_value_in_row(row, ['addome', 'vita']))
-    d['fianchi'] = clean_num(find_value_in_row(row, ['fianchi']))
-    d['br_dx'] = clean_num(find_value_in_row(row, ['bracciodx', 'rightarm']))
-    d['br_sx'] = clean_num(find_value_in_row(row, ['bracciosx', 'leftarm']))
-    d['cg_dx'] = clean_num(find_value_in_row(row, ['cosciadx']))
-    d['cg_sx'] = clean_num(find_value_in_row(row, ['cosciasx']))
-    d['pl_dx'] = clean_num(find_value_in_row(row, ['polpacciodx']))
-    d['caviglia'] = clean_num(find_value_in_row(row, ['caviglia']))
-    d['obiettivi'] = find_value_in_row(row, ['obiettivi', 'goals'])
-    d['durata'] = clean_num(find_value_in_row(row, ['minuti', 'sessione']))
-    d['fasce'] = find_value_in_row(row, ['fasce', 'orarie'])
+    
+    # --- CAMPI COMUNI (ANAGRAFICA & MISURE) ---
+    d['nome'] = get_val(row, ['Nome', 'Name']) + " " + get_val(row, ['Cognome'])
+    d['email'] = get_val(row, ['E-mail', 'Email'])
+    d['data_nascita'] = get_val(row, ['Data di Nascita'])
+    
+    # Misure
+    d['peso'] = get_val(row, ['Peso Kg'], True)
+    d['altezza'] = get_val(row, ['Altezza in cm'], True)
+    d['collo'] = get_val(row, ['Collo in cm'], True)
+    d['torace'] = get_val(row, ['Torace in cm'], True)
+    d['addome'] = get_val(row, ['Addome cm'], True)
+    d['fianchi'] = get_val(row, ['Fianchi cm'], True)
+    
+    # Arti (tutti i campi richiesti)
+    d['br_sx'] = get_val(row, ['Braccio Sx cm'], True)
+    d['br_dx'] = get_val(row, ['Braccio Dx cm'], True)
+    d['av_sx'] = get_val(row, ['Avambraccio Sx cm'], True)
+    d['av_dx'] = get_val(row, ['Avambraccio Dx cm'], True)
+    d['cg_sx'] = get_val(row, ['Coscia Sx cm'], True)
+    d['cg_dx'] = get_val(row, ['Coscia Dx cm'], True)
+    d['pl_sx'] = get_val(row, ['Polpaccio Sx cm'], True)
+    d['pl_dx'] = get_val(row, ['Polpaccio Dx cm'], True)
+    d['caviglia'] = get_val(row, ['Caviglia cm'], True)
+    
+    # Logistica
+    d['minuti'] = get_val(row, ['Minuti medi'], True)
+    d['fasce'] = get_val(row, ['Fasce orarie'])
+    
+    # Giorni (Unisci tutte le colonne che contengono giorni)
     days_found = []
     for k, v in row.items():
-        if v and any(x in str(v).lower() for x in ['luned', 'marted', 'mercoled', 'gioved', 'venerd', 'sabato', 'domenica']):
-             days_found.append(str(v))
-    d['giorni_raw'] = ", ".join(list(set(days_found))) if days_found else ""
+        if v and any(day in str(v).lower() for day in ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica']):
+            days_found.append(str(v))
+    d['giorni'] = ", ".join(list(set(days_found)))
     d['num_giorni'] = len(days_found) if days_found else 3
 
+    # --- CAMPI SPECIFICI ---
     if tipo == "ANAMNESI":
-        d['farmaci'] = find_value_in_row(row, ['farmaci'])
-        d['disfunzioni'] = find_value_in_row(row, ['disfunzioni', 'patomeccaniche']) + " " + find_value_in_row(row, ['overuse'])
-        d['integrazione'] = find_value_in_row(row, ['integrazione'])
-        d['stress'] = "N/A"
-    else:
-        d['disfunzioni'] = find_value_in_row(row, ['nuovi', 'sintomi'])
-        d['stress'] = find_value_in_row(row, ['stress', 'recupero'])
-        d['farmaci'] = ""; d['integrazione'] = ""
+        d['indirizzo'] = get_val(row, ['Indirizzo'])
+        d['cf'] = get_val(row, ['Codice Fiscale'])
+        d['sport'] = get_val(row, ['Sport Praticato'])
+        d['obiettivi'] = get_val(row, ['Obiettivi a Breve'])
+        d['farmaci'] = get_val(row, ['Assunzione Farmaci'])
+        d['disfunzioni'] = get_val(row, ['Disfunzioni Patomeccaniche']) + " " + get_val(row, ['Anamnesi Meccanopatica'])
+        d['limitazioni'] = get_val(row, ['Compensi e Limitazioni'])
+        d['allergie'] = get_val(row, ['Allergie'])
+        d['esclusioni'] = get_val(row, ['Esclusioni alimentari'])
+        d['integrazione'] = get_val(row, ['Integrazione attuale'])
+        # Placeholder Checkup
+        d['aderenza'] = ""; d['stress'] = ""; d['nuovi'] = ""; d['fb_forza'] = ""
+        
+    else: # CHECKUP
+        d['obiettivi'] = "CHECK-UP RICORRENTE"
+        d['aderenza'] = get_val(row, ['Aderenza al Piano'])
+        d['stress'] = get_val(row, ['Monitoraggio Stress'])
+        d['fb_forza'] = get_val(row, ['Note su forza'])
+        d['nuovi'] = get_val(row, ['Nuovi Sintomi'])
+        d['note_gen'] = get_val(row, ['Inserire note relative'])
+        # Placeholder Anamnesi
+        d['indirizzo']=""; d['cf']=""; d['sport']=""; d['farmaci']=""; d['disfunzioni']=""; d['limitazioni']=""; d['allergie']=""; d['esclusioni']=""; d['integrazione']=""
+
     return d
 
 # ==============================================================================
-# 3. INTERFACCIA & LOGICA AI
+# 3. INTERFACCIA
 # ==============================================================================
 
 def main():
     st.sidebar.image("https://via.placeholder.com/150x50/000000/E20613?text=AREA199", use_container_width=True)
-    st.sidebar.title("AREA 199 v2.1")
+    st.sidebar.title("AREA 199 v3.0")
     
     role = st.sidebar.radio("MODALITÀ", ["Coach Admin", "Atleta"])
     pwd = st.sidebar.text_input("Password", type="password")
 
-    # DB Esercizi (Caricato in memoria)
     ex_db = load_exercise_db()
 
     # --- COACH ---
@@ -190,11 +186,11 @@ def main():
         inbox = []
         try:
             sh1 = client.open("BIO ENTRY ANAMNESI").sheet1
-            for r in sh1.get_all_records(): inbox.append({"label": f"🆕 {r.get('Nome','U')} (Anamnesi)", "data": extract_data(r, "ANAMNESI")})
+            for r in sh1.get_all_records(): inbox.append({"label": f"🆕 {r.get('Nome','')} {r.get('Cognome','')} (Anamnesi)", "data": extract_data_full(r, "ANAMNESI")})
         except: pass
         try:
             sh2 = client.open("BIO CHECK-UP").sheet1
-            for r in sh2.get_all_records(): inbox.append({"label": f"🔄 {r.get('Nome','U')} (Check)", "data": extract_data(r, "CHECKUP")})
+            for r in sh2.get_all_records(): inbox.append({"label": f"🔄 {r.get('Nome','')} (Check)", "data": extract_data_full(r, "CHECKUP")})
         except: pass
         
         sel = st.selectbox("SELEZIONA CLIENTE", ["-"] + list({x['label']: x for x in inbox}.keys()))
@@ -206,153 +202,133 @@ def main():
             
             d = st.session_state['d']
             soma_calc = calc_somatotype_advanced(d['peso'], d['altezza'], d['br_dx']/6, d['caviglia'])
-            split_suggerita = suggest_split(d['num_giorni'])
+            split_sugg = suggest_split(d['num_giorni'])
 
-            st.title(f"{d['nome']} {d['cognome']}")
-            st.markdown(f"**Somatotipo:** `{soma_calc}` | **Split Consigliata:** `{split_suggerita}`")
+            st.title(f"{d['nome']}")
+            st.info(f"Somatotipo: {soma_calc} | Split Suggerita: {split_sugg}")
             
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                d['peso'] = st.number_input("Peso", value=d['peso'])
-                d['disfunzioni'] = st.text_area("Infortuni", value=d['disfunzioni'])
-            with c2:
-                giorni_training = st.slider("Giorni Allenamento", 1, 7, int(d['num_giorni']))
-                durata_training = st.slider("Minuti Reali", 30, 120, int(d['durata']) if d['durata'] > 0 else 60)
-            with c3:
-                intensita = st.selectbox("Livello Intensità", ["Standard (Straight Sets)", "Avanzato (RIR/RPE)", "Pro (Drop Sets, Rest Pause)"])
-                focus_muscolare = st.text_input("Focus Muscolare", "General")
+            # --- TAB VISUALIZZAZIONE COMPLETA ---
+            t1, t2, t3 = st.tabs(["1. FISIOLOGIA", "2. CLINICA", "3. LOGISTICA"])
+            with t1:
+                c1, c2, c3 = st.columns(3)
+                with c1: 
+                    d['peso'] = st.number_input("Peso", value=d['peso'])
+                    d['altezza'] = st.number_input("Altezza", value=d['altezza'])
+                with c2:
+                    st.write("Tronco:", d['collo'], d['torace'], d['addome'], d['fianchi'])
+                    st.write("Braccia:", d['br_dx'], d['av_dx'])
+                with c3:
+                    st.write("Gambe:", d['cg_dx'], d['pl_dx'], d['caviglia'])
+            
+            with t2:
+                k1, k2 = st.columns(2)
+                d['disfunzioni'] = k1.text_area("Infortuni/Disfunzioni", value=f"{d['disfunzioni']} {d['nuovi']} {d['limitazioni']}")
+                d['farmaci'] = k1.text_area("Farmaci", value=d['farmaci'])
+                d['integrazione'] = k2.text_area("Integrazione", value=d['integrazione'])
+                d['obiettivi'] = k2.text_area("OBIETTIVI", value=d['obiettivi'])
+            
+            with t3:
+                giorni_slider = st.slider("Giorni", 1, 7, int(d['num_giorni']) if d['num_giorni'] > 0 else 3)
+                minuti_slider = st.slider("Minuti", 30, 150, int(d['minuti']) if d['minuti'] > 0 else 60)
+                intensita = st.selectbox("Intensità", ["Standard", "RIR/RPE", "Pro (DropSets)"])
 
-            if st.button("🚀 GENERA SCHEDA TECNICA (CON IMMAGINI)"):
-                with st.spinner("Calcolo volumi e selezione esercizi..."):
-                    
-                    max_sets_session = int(durata_training / 3.5) # Tuning tempo
+            # --- GENERAZIONE ---
+            if st.button("🚀 GENERA SCHEDA"):
+                with st.spinner("Creazione Protocollo..."):
+                    max_sets = int(minuti_slider / 3.5)
                     
                     prompt = f"""
-                    Sei Antonio Petruzzi. Genera scheda JSON rigida.
+                    Sei Antonio Petruzzi. Genera scheda JSON.
                     ATLETA: {d['nome']}, {soma_calc}.
-                    VINCOLI: {giorni_training} giorni, {durata_training} minuti MAX ({max_sets_session} serie totali per sessione).
-                    SPLIT: {split_suggerita}.
-                    INTENSITÀ: {intensita}.
-                    INFORTUNI: {d['disfunzioni']} (ESCLUDI ESERCIZI PERICOLOSI).
+                    VINCOLI: {giorni_slider}gg, {minuti_slider}min ({max_sets} sets/session).
+                    SPLIT: {split_sugg}. INTENSITA': {intensita}.
+                    LIMITI: {d['disfunzioni']}.
                     
-                    IMPORTANTE: 
-                    1. Usa nomi esercizi INGLESI standard (es. "Barbell Bench Press") per trovare le immagini nel DB.
-                    2. Inserisci tecniche di intensità nel campo 'note' se richiesto.
+                    USA SOLO NOMI ESERCIZI IN INGLESE.
                     
-                    OUTPUT JSON:
-                    {{
-                        "focus": "...",
-                        "analisi": "...",
-                        "tabella": {{
-                            "Giorno 1 - Push": [
-                                {{"ex": "Barbell Bench Press", "sets": "4", "reps": "6-8", "rest": "120s", "note": "..."}},
-                                ...
-                            ]
-                        }}
-                    }}
+                    OUTPUT JSON: {{ "focus": "...", "analisi": "...", "tabella": {{ "Day 1": [ {{"ex": "Barbell Bench Press", "sets": "4", "reps": "8", "rest": "90s", "note": ""}} ] }} }}
                     """
                     
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(
-                            model="gpt-4o",
-                            messages=[{"role": "system", "content": prompt}],
-                            response_format={"type": "json_object"}
+                            model="gpt-4o", messages=[{"role":"system","content":prompt}], response_format={"type":"json_object"}
                         )
-                        raw_plan = json.loads(res.choices[0].message.content)
+                        raw = json.loads(res.choices[0].message.content)
                         
-                        # --- POST-PROCESSING: INIEZIONE IMMAGINI ---
-                        final_table = {}
-                        for day, exercises in raw_plan.get('tabella', {}).items():
-                            enriched_exs = []
-                            for ex in exercises:
-                                images = find_exercise_images(ex['ex'], ex_db)
-                                ex['images'] = images # Salva lista completa
-                                enriched_exs.append(ex)
-                            final_table[day] = enriched_exs
+                        # IMAGE INJECTION
+                        final_tab = {}
+                        for day, exs in raw.get('tabella', {}).items():
+                            enriched = []
+                            for ex in exs:
+                                imgs = find_exercise_images(ex['ex'], ex_db)
+                                ex['images'] = imgs[:2]
+                                enriched.append(ex)
+                            final_tab[day] = enriched
+                        raw['tabella'] = final_tab
                         
-                        raw_plan['tabella'] = final_table
-                        st.session_state['final_plan'] = raw_plan
-                        
-                    except Exception as e:
-                        st.error(f"Errore: {e}")
+                        st.session_state['plan'] = raw
+                    except Exception as e: st.error(str(e))
 
-            if 'final_plan' in st.session_state:
-                plan = st.session_state['final_plan']
+            if 'plan' in st.session_state:
+                plan = st.session_state['plan']
                 
-                with st.expander("📝 MODIFICA MANUALE JSON"):
-                    plan_edited = st.text_area("JSON Editor", value=json.dumps(plan, indent=2), height=300)
-                    if st.button("Applica Modifiche Manuali"):
-                        st.session_state['final_plan'] = json.loads(plan_edited)
+                # MODIFICA JSON
+                with st.expander("EDIT JSON"):
+                    edited = st.text_area("JSON", json.dumps(plan, indent=2))
+                    if st.button("Applica"): 
+                        st.session_state['plan'] = json.loads(edited)
                         st.rerun()
 
-                st.markdown(f"## {plan.get('focus')}")
+                # VIEW
+                st.header(plan.get('focus'))
                 st.info(plan.get('analisi'))
-                
                 for day, exs in plan.get('tabella', {}).items():
-                    st.markdown(f"### {day}")
+                    st.subheader(day)
                     for ex in exs:
-                        c_img, c_txt = st.columns([1, 3])
-                        with c_img:
-                            # Visualizzazione Immagini (Start/End se presenti)
-                            if ex.get('images') and len(ex['images']) > 0:
-                                # Mostra fino a 2 immagini
-                                cols_img = st.columns(2)
-                                for i, img_url in enumerate(ex['images'][:2]):
-                                    with cols_img[i]:
-                                        st.image(img_url, use_container_width=True)
-                            else:
-                                st.caption("No Image")
-                        with c_txt:
-                            st.markdown(f"**{ex['ex']}**")
-                            st.caption(f"{ex['sets']} x {ex['reps']} | Rest: {ex['rest']}")
-                            if ex.get('note'): st.markdown(f"🔥 *{ex['note']}*")
-                        st.divider()
+                        c1, c2 = st.columns([1,3])
+                        if ex.get('images'): 
+                            c1.image(ex['images'][0]) 
+                            if len(ex['images']) > 1: c1.image(ex['images'][1])
+                        c2.write(f"**{ex['ex']}**")
+                        c2.write(f"{ex['sets']}x{ex['reps']} | {ex['rest']}")
+                        if ex.get('note'): c2.caption(ex['note'])
+                    st.divider()
 
-                if st.button("💾 SALVA E INVIA AL CLIENTE"):
+                if st.button("💾 SALVA"):
                     try:
-                        db_sheet = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                        db_sheet.append_row([
-                            datetime.now().strftime("%Y-%m-%d"),
-                            d['email'],
-                            d['nome'],
-                            json.dumps(st.session_state['final_plan'])
-                        ])
-                        st.success("SCHEDA SALVATA CON SUCCESSO!")
-                    except: st.error("Errore Salvataggio DB")
+                        db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
+                        db.append_row([datetime.now().strftime("%Y-%m-%d"), d['email'], d['nome'], json.dumps(st.session_state['plan'])])
+                        st.success("Salvato!")
+                    except: st.error("Errore Salvataggio")
 
     # --- ATLETA ---
     elif role == "Atleta" and pwd == "AREA199":
         client = get_client()
-        st.title("AREA 199 | ATLETA")
-        email = st.text_input("Inserisci la tua Email")
-        if st.button("VEDI LA MIA SCHEDA"):
+        email = st.text_input("Email")
+        if st.button("Vedi Scheda"):
             try:
                 sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                 data = sh.get_all_records()
-                user_plans = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
-                
-                if user_plans:
-                    plan = json.loads(user_plans[-1]['JSON_Completo'])
-                    st.header(plan.get('focus'))
-                    st.write(plan.get('analisi'))
-                    
-                    for day, exs in plan.get('tabella', {}).items():
-                        with st.expander(day, expanded=True):
+                plans = [x for x in data if x.get('Email','').lower() == email.lower()]
+                if plans:
+                    p = json.loads(plans[-1]['JSON_Completo'])
+                    st.title(p.get('focus'))
+                    st.write(p.get('analisi'))
+                    for d, exs in p.get('tabella', {}).items():
+                        with st.expander(d):
                             for ex in exs:
-                                cols = st.columns([1,3])
-                                with cols[0]:
-                                    if ex.get('images'):
-                                        # Visualizzazione Atleta (Start/End)
-                                        img_cols = st.columns(len(ex['images'][:2]))
-                                        for i, img_url in enumerate(ex['images'][:2]):
-                                            img_cols[i].image(img_url, use_container_width=True)
-                                with cols[1]:
-                                    st.subheader(ex['ex'])
-                                    st.write(f"**{ex['sets']}** sets x **{ex['reps']}** (Rest: {ex['rest']})")
-                                    if ex.get('note'): st.info(ex['note'])
-                else: st.warning("Nessuna scheda attiva trovata.")
-            except Exception as e: st.error(f"Errore recupero: {e}")
+                                c1, c2 = st.columns([1,3])
+                                if ex.get('images'): 
+                                    c1.image(ex['images'][0])
+                                    if len(ex['images']) > 1: 
+
+[Image of Barbell Bench Press]
+c1.image(ex['images'][1])
+                                c2.write(f"**{ex['ex']}** - {ex['sets']}x{ex['reps']}")
+                                c2.caption(ex.get('note'))
+                else: st.warning("Nessuna scheda")
+            except: st.error("Errore")
 
 if __name__ == "__main__":
     main()
