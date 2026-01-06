@@ -109,14 +109,13 @@ def extract_data_mirror(row, tipo):
     
     d['Giorni'] = ", ".join(sorted(list(set(days_found))))
 
-    # CHECKUP + CAMPO NOTE MANCANTE AGGIUNTO
+    # CHECKUP
     if tipo == "CHECKUP":
         d['Obiettivi'] = "CHECK-UP MONITORAGGIO" 
         d['Aderenza'] = get_val(row, ['Aderenza'])
         d['Stress'] = get_val(row, ['Monitoraggio Stress'])
         d['Forza'] = get_val(row, ['Note su forza'])
         d['NuoviSintomi'] = get_val(row, ['Nuovi Sintomi'])
-        # CAMPO AGGIUNTO
         d['NoteGen'] = get_val(row, ['Inserire note relative', 'variabili aspecifiche'])
     else:
         d['Aderenza'] = ""; d['Stress'] = ""; d['Forza'] = ""; d['NuoviSintomi'] = ""; d['NoteGen'] = ""
@@ -227,7 +226,6 @@ def main():
                     st.markdown("---")
                     st.caption("DATI CHECK-UP")
                     d['NuoviSintomi'] = st.text_area("Nuovi Sintomi", value=d['NuoviSintomi'])
-                    # VISUALIZZAZIONE CAMPO NOTE GENERICHE AGGIUNTO
                     d['NoteGen'] = st.text_area("Note Variabili Aspecifiche", value=d.get('NoteGen',''))
                     
                     c_fb1, c_fb2 = st.columns(2)
@@ -251,7 +249,7 @@ def main():
                 with st.spinner("Elaborazione (Analisi e Commenti in ITALIANO)..."):
                     
                     prompt = f"""
-                    Sei Antonio Petruzzi. Crea scheda allenamento JSON.
+                    Sei Antonio Petruzzi. Crea scheda allenamento JSON in INGLESE.
                     
                     DATI ATLETA:
                     {json.dumps(d, indent=2)}
@@ -308,7 +306,6 @@ def main():
                 for day, exs in plan.get('tabella', {}).items():
                     st.subheader(day)
                     for ex in exs:
-                        # Layout 2 colonne per immagini (FIX IMMAGINI AFFIANCATE)
                         c1, c2 = st.columns([2,3])
                         with c1:
                             if ex.get('images'): 
@@ -317,8 +314,9 @@ def main():
                                 if len(ex['images']) > 1: 
                                     img_cols[1].image(ex['images'][1], use_container_width=True)
                         with c2:
-                            st.write(f"**{ex['ex']}**")
-                            st.write(f"**{ex['sets']}** sets x **{ex['reps']}** | Rest: **{ex['rest']}**")
+                            # SAFE ACCESS HERE
+                            st.write(f"**{ex.get('ex', 'Esercizio')}**")
+                            st.write(f"**{ex.get('sets','?')}** sets x **{ex.get('reps','?')}** | Rest: **{ex.get('rest','?')}**")
                             if ex.get('note'): st.caption(f"📝 {ex['note']}")
                     st.divider()
 
@@ -337,7 +335,7 @@ def main():
                         st.error(f"Errore Salvataggio: {e}")
                         st.warning("Verifica che nel file AREA199_DB, foglio SCHEDE_ATTIVE, le intestazioni siano: Data, Email, Nome, JSON_Completo")
 
-    # --- ATLETA (FIX ERRORE EXS) ---
+    # --- ATLETA ---
     elif role == "Atleta" and pwd == "AREA199":
         client = get_client()
         email = st.text_input("Tua Email")
@@ -359,7 +357,6 @@ def main():
                     for day_name, exs in p.get('tabella', {}).items():
                         with st.expander(day_name):
                             for ex in exs:
-                                # Layout Immagini affiancate anche per Atleta
                                 c1, c2 = st.columns([2,3])
                                 with c1:
                                     if ex.get('images'):
@@ -367,14 +364,12 @@ def main():
                                         img_cols[0].image(ex['images'][0], use_container_width=True)
                                         if len(ex['images']) > 1:
                                             img_cols[1].image(ex['images'][1], use_container_width=True)
-                                
                                 with c2:
                                     st.markdown(f"### {ex.get('ex', 'Esercizio')}")
                                     st.write(f"**{ex.get('sets','?')}** sets x **{ex.get('reps','?')}**")
                                     st.write(f"Rest: **{ex.get('rest','?')}**")
                                     if ex.get('note'):
                                         st.caption(f"📝 {ex['note']}")
-                                
                                 st.divider()
                 else:
                     st.warning("Nessuna scheda attiva trovata per questa email.")
