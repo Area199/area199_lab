@@ -98,13 +98,18 @@ def extract_data_mirror(row, tipo):
     
     days_found = []
     days_keywords = ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica']
+    
     for k, v in row.items():
         val_str = str(v).lower()
         key_str = str(k).lower()
-        if 'giorn' in key_str and val_str:
-             for day in days_keywords:
-                 if day in val_str or (day in key_str and val_str):
-                     days_found.append(day.capitalize())
+        
+        # Se la colonna riguarda i giorni...
+        if 'giorn' in key_str:
+            # ...controlliamo se il VALORE contiene esplicitamente il giorno
+            for day in days_keywords:
+                if day in val_str: # Verifica stretta sul contenuto
+                    days_found.append(day.capitalize())
+    
     d['Giorni'] = ", ".join(sorted(list(set(days_found))))
 
     # CHECKUP
@@ -362,3 +367,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
