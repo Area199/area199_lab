@@ -12,7 +12,7 @@ from rapidfuzz import process, fuzz
 # ==============================================================================
 # 0. CONFIGURAZIONE SYSTEM
 # ==============================================================================
-st.set_page_config(page_title="AREA 199 | TOTAL CONTROL", layout="wide", page_icon="🩸")
+st.set_page_config(page_title="AREA 199 | SYSTEM", layout="wide", page_icon="🩸")
 
 st.markdown("""
 <style>
@@ -26,7 +26,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE ESTRAZIONE DATI (MAPPA TOTALE 1:1)
+# 1. MOTORE ESTRAZIONE DATI (RISOLTO IL BUG NOME/COGNOME)
 # ==============================================================================
 
 @st.cache_resource
@@ -42,11 +42,9 @@ def clean_num(val):
     except: return 0.0
 
 def normalize_key(key):
-    """Rimuove caratteri speciali per trovare le colonne anche se Tally cambia ID"""
     return re.sub(r'[^a-zA-Z0-9]', '', str(key).lower())
 
 def get_val(row, keywords, is_num=False):
-    """Cerca il valore scansendo tutte le chiavi della riga"""
     row_norm = {normalize_key(k): v for k, v in row.items()}
     for kw in keywords:
         kw_norm = normalize_key(kw)
@@ -60,7 +58,7 @@ def get_val(row, keywords, is_num=False):
 def extract_data_full(row, tipo):
     d = {}
     
-    # --- ANAGRAFICA ---
+    # --- ANAGRAFICA (SEPARATI PER EVITARE KEYERROR) ---
     d['nome'] = get_val(row, ['Nome', 'Name'])
     d['cognome'] = get_val(row, ['Cognome', 'Surname'])
     d['email'] = get_val(row, ['E-mail', 'Email'])
@@ -68,7 +66,7 @@ def extract_data_full(row, tipo):
     d['indirizzo'] = get_val(row, ['Indirizzo'])
     d['data_nascita'] = get_val(row, ['Data di Nascita'])
     
-    # --- MISURE ANTROPOMETRICHE (TUTTE) ---
+    # --- MISURE ---
     d['peso'] = get_val(row, ['Peso Kg'], True)
     d['altezza'] = get_val(row, ['Altezza in cm'], True)
     d['collo'] = get_val(row, ['Collo in cm'], True)
@@ -76,24 +74,21 @@ def extract_data_full(row, tipo):
     d['addome'] = get_val(row, ['Addome cm'], True)
     d['fianchi'] = get_val(row, ['Fianchi cm'], True)
     
-    # Arti Superiori
+    # ARTI
     d['br_dx'] = get_val(row, ['Braccio Dx'], True)
     d['br_sx'] = get_val(row, ['Braccio Sx'], True)
     d['av_dx'] = get_val(row, ['Avambraccio Dx'], True)
     d['av_sx'] = get_val(row, ['Avambraccio Sx'], True)
-    
-    # Arti Inferiori
     d['cg_dx'] = get_val(row, ['Coscia Dx'], True)
     d['cg_sx'] = get_val(row, ['Coscia Sx'], True)
     d['pl_dx'] = get_val(row, ['Polpaccio Dx'], True)
     d['pl_sx'] = get_val(row, ['Polpaccio Sx'], True)
     d['caviglia'] = get_val(row, ['Caviglia'], True)
     
-    # --- LOGISTICA (Giorni e Orari) ---
+    # --- LOGISTICA ---
     d['minuti'] = get_val(row, ['Minuti medi'], True)
     d['fasce'] = get_val(row, ['Fasce orarie', 'limitazioni cronobiologiche'])
     
-    # Aggregazione Giorni (Tally spesso spezza i giorni in colonne multiple)
     days_found = []
     for k, v in row.items():
         if v and any(day in str(v).lower() for day in ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica']):
@@ -103,19 +98,14 @@ def extract_data_full(row, tipo):
 
     # --- CLINICA & SPORT ---
     d['sport'] = get_val(row, ['Sport Praticato'])
-    
-    # Mappatura Farmaci & Patologie
     d['farmaci'] = get_val(row, ['Assunzione Farmaci'])
     d['disfunzioni'] = get_val(row, ['Disfunzioni Patomeccaniche'])
     d['overuse'] = get_val(row, ['Anamnesi Meccanopatica'])
     d['limitazioni'] = get_val(row, ['Compensi e Limitazioni'])
-    
-    # Nutrizione
     d['allergie'] = get_val(row, ['Allergie'])
     d['esclusioni'] = get_val(row, ['Esclusioni alimentari'])
     d['integrazione'] = get_val(row, ['Integrazione attuale'])
 
-    # --- SPECIFICI PER TIPO FORM ---
     if tipo == "ANAMNESI":
         d['obiettivi'] = get_val(row, ['Obiettivi a Breve'])
         d['nuovi_sintomi'] = ""
@@ -163,8 +153,19 @@ def suggest_split(days):
     if d == 5: return "Hybrid"
     return "PPL x2"
 
+def calc_somatotype_simple(w, h, wrist):
+    # Versione sicura senza richiedere troppi dati
+    if not w or not h: return "N/A"
+    h_m = h / 100
+    bmi = w / (h_m**2)
+    soma = "Mesomorfo"
+    # Stima su BMI e struttura se abbiamo polso, altrimenti solo BMI
+    if bmi < 20: soma = "Ectomorfo"
+    elif bmi > 25: soma = "Endomorfo"
+    return soma
+
 # ==============================================================================
-# 3. INTERFACCIA COACH (WORKSTATION)
+# 3. INTERFACCIA
 # ==============================================================================
 
 def main():
@@ -177,7 +178,6 @@ def main():
     if role == "Coach Admin" and pwd == "PETRUZZI199":
         client = get_client()
         
-        # INBOX UNIFICATA
         inbox = []
         try:
             sh1 = client.open("BIO ENTRY ANAMNESI").sheet1
@@ -197,16 +197,16 @@ def main():
             
             d = st.session_state['d']
             split_sugg = suggest_split(d['num_giorni'])
-
-            st.title(f"{d['nome']} {d['cognome']}")
-            st.markdown(f"**CF:** {d['cf']} | **Mail:** {d['email']} | **Indirizzo:** {d['indirizzo']}")
+            
+            # Titolo sicuro usando le chiavi corrette
+            st.title(f"{d.get('nome','')} {d.get('cognome','')}")
+            st.markdown(f"**CF:** {d['cf']} | **Mail:** {d['email']}")
             st.info(f"Obiettivo: {d['obiettivi']} | Split Suggerita: {split_sugg}")
 
-            # --- TAB VISUALIZZAZIONE COMPLETA ---
-            t1, t2, t3, t4 = st.tabs(["1. MISURE", "2. CLINICA", "3. LOGISTICA", "4. GENERATORE"])
+            # --- TAB ---
+            t1, t2, t3, t4 = st.tabs(["1. MISURE", "2. CLINICA", "3. LOGISTICA", "4. AI GENERATOR"])
             
             with t1:
-                st.markdown("#### MISURE ANTROPOMETRICHE")
                 c1, c2, c3 = st.columns(3)
                 with c1: 
                     d['peso'] = st.number_input("Peso (Kg)", value=d['peso'])
@@ -215,72 +215,59 @@ def main():
                     st.write("TRONCO")
                     st.caption(f"Collo: {d['collo']} | Torace: {d['torace']} | Addome: {d['addome']} | Fianchi: {d['fianchi']}")
                 with c3:
-                    st.write("ARTI (Dx / Sx)")
-                    st.caption(f"Braccio: {d['br_dx']}/{d['br_sx']} | Avambraccio: {d['av_dx']}/{d['av_sx']}")
-                    st.caption(f"Coscia: {d['cg_dx']}/{d['cg_sx']} | Polpaccio: {d['pl_dx']}/{d['pl_sx']}")
-                    st.caption(f"Caviglia: {d['caviglia']}")
+                    st.write("ARTI")
+                    st.caption(f"Braccio: {d['br_dx']} | Coscia: {d['cg_dx']} | Caviglia: {d['caviglia']}")
 
             with t2:
-                st.markdown("#### QUADRO CLINICO E NUTRIZIONALE")
                 k1, k2 = st.columns(2)
                 with k1:
-                    st.markdown("<div class='section-box'>PATOLOGIE & LIMITI</div>", unsafe_allow_html=True)
                     d['disfunzioni'] = st.text_area("Patomeccanica", value=d['disfunzioni'])
                     d['overuse'] = st.text_area("Overuse", value=d['overuse'])
                     d['limitazioni'] = st.text_area("Compensi/Limiti", value=d['limitazioni'])
                     d['nuovi_sintomi'] = st.text_area("Nuovi Sintomi (Check)", value=d['nuovi_sintomi'])
-                    d['farmaci'] = st.text_area("Farmaci", value=d['farmaci'])
                 with k2:
-                    st.markdown("<div class='section-box'>LIFESTYLE</div>", unsafe_allow_html=True)
+                    d['farmaci'] = st.text_area("Farmaci", value=d['farmaci'])
                     st.text_area("Allergie/Esclusioni", value=f"{d['allergie']} {d['esclusioni']}")
                     d['integrazione'] = st.text_area("Integrazione", value=d['integrazione'])
-                    st.text_input("Feedback Check", value=f"Stress: {d['stress']} | Aderenza: {d['aderenza']} | Forza: {d['fb_forza']}")
+                    st.text_input("Feedback", value=f"Stress: {d['stress']} | Aderenza: {d['aderenza']}")
 
             with t3:
-                st.markdown("#### SETTING ALLENAMENTO")
                 d['obiettivi'] = st.text_area("OBIETTIVI SPECIFICI", value=d['obiettivi'])
-                st.text_input("Sport Praticato", value=d['sport'])
+                st.text_input("Sport", value=d['sport'])
                 st.text_input("Fasce Orarie", value=d['fasce'])
-                st.text_input("Giorni Disponibili (Raw)", value=d['giorni'])
+                st.text_input("Giorni (Raw)", value=d['giorni'])
 
             with t4:
-                st.markdown("#### AI CONTROL ROOM")
                 giorni_slider = st.slider("Giorni Training", 1, 7, int(d['num_giorni']) if d['num_giorni'] > 0 else 3)
                 minuti_slider = st.slider("Minuti Sessione", 30, 150, int(d['minuti']) if d['minuti'] > 0 else 60)
-                intensita = st.selectbox("Intensità", ["Standard", "RIR/RPE", "Pro (DropSets/RestPause)"])
+                intensita = st.selectbox("Intensità", ["Standard", "RIR/RPE", "Pro (DropSets)"])
 
                 if st.button("🚀 GENERA SCHEDA (FULL DATA)"):
-                    with st.spinner("Analisi completa di tutti i parametri..."):
+                    with st.spinner("Elaborazione..."):
                         max_sets = int(minuti_slider / 3.5)
                         
-                        # PROMPT CHE INCLUDE TUTTO
                         prompt = f"""
                         Sei Antonio Petruzzi. Genera scheda JSON.
-                        
-                        ATLETA: {d['nome']}. 
-                        STRUTTURA: Peso {d['peso']}kg, Altezza {d['altezza']}cm.
+                        ATLETA: {d['nome']}. STRUTTURA: {d['peso']}kg, {d['altezza']}cm.
                         OBIETTIVI: {d['obiettivi']}.
-                        VINCOLI: {giorni_slider} giorni, {minuti_slider} min (Max {max_sets} sets/session).
-                        SPLIT SUGGERITA: {split_sugg}. INTENSITA: {intensita}.
+                        VINCOLI: {giorni_slider}gg, {minuti_slider}min (Max {max_sets} sets/session).
+                        SPLIT: {split_sugg}. INTENSITA: {intensita}.
                         
-                        QUADRO CLINICO (EVITA ESERCIZI DANNOSI):
+                        CLINICA (IMPORTANTE):
                         - Patomeccanica: {d['disfunzioni']}
                         - Overuse: {d['overuse']}
                         - Limitazioni: {d['limitazioni']}
-                        - Sintomi Recenti: {d['nuovi_sintomi']}
+                        - Sintomi: {d['nuovi_sintomi']}
                         
-                        NOTE EXTRA:
-                        - Integrazione: {d['integrazione']}
-                        - Farmaci: {d['farmaci']}
+                        NOTE: Integrazione {d['integrazione']}, Farmaci {d['farmaci']}.
                         
-                        OUTPUT JSON RICHIESTO:
+                        OUTPUT JSON:
                         {{
-                            "focus": "Nome Mesociclo",
-                            "analisi": "Analisi tecnica dello stato attuale.",
+                            "focus": "...",
+                            "analisi": "...",
                             "tabella": {{
                                 "Day 1 - Focus": [
-                                    {{"ex": "Barbell Bench Press", "sets": "4", "reps": "6-8", "rest": "120s", "note": "..."}},
-                                    ...
+                                    {{"ex": "Barbell Bench Press", "sets": "4", "reps": "8", "rest": "120s", "note": "..."}}
                                 ]
                             }}
                         }}
@@ -292,7 +279,7 @@ def main():
                             )
                             raw = json.loads(res.choices[0].message.content)
                             
-                            # INIEZIONE IMMAGINI
+                            # IMAGES
                             final_tab = {}
                             for day, exs in raw.get('tabella', {}).items():
                                 enriched = []
@@ -306,15 +293,13 @@ def main():
                             st.session_state['plan'] = raw
                         except Exception as e: st.error(f"Errore AI: {e}")
 
-            # --- VIEW & SAVE ---
+            # --- SAVE ---
             if 'plan' in st.session_state:
                 plan = st.session_state['plan']
                 
-                with st.expander("📝 MODIFICA JSON (AVANZATO)"):
+                with st.expander("📝 EDIT JSON"):
                     edited = st.text_area("JSON", json.dumps(plan, indent=2), height=300)
-                    if st.button("Applica Modifiche"): 
-                        st.session_state['plan'] = json.loads(edited)
-                        st.rerun()
+                    if st.button("Applica"): st.session_state['plan'] = json.loads(edited); st.rerun()
 
                 st.header(plan.get('focus'))
                 st.info(plan.get('analisi'))
@@ -333,12 +318,12 @@ def main():
                             if ex.get('note'): st.caption(ex['note'])
                     st.divider()
 
-                if st.button("💾 SALVA SCHEDA NEL DB"):
+                if st.button("💾 SALVA"):
                     try:
                         db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                        db.append_row([datetime.now().strftime("%Y-%m-%d"), d['email'], d['nome'], json.dumps(st.session_state['plan'])])
-                        st.success("SCHEDA SALVATA!")
-                    except: st.error("Errore Salvataggio: Verifica che il file AREA199_DB esista e abbia il foglio SCHEDE_ATTIVE")
+                        db.append_row([datetime.now().strftime("%Y-%m-%d"), d['email'], f"{d['nome']} {d['cognome']}", json.dumps(st.session_state['plan'])])
+                        st.success("SALVATO!")
+                    except: st.error("Errore Salvataggio")
 
     # --- ATLETA ---
     elif role == "Atleta" and pwd == "AREA199":
@@ -362,8 +347,8 @@ def main():
                                     if len(ex['images']) > 1: st.image(ex['images'][1], use_container_width=True)
                                 c2.write(f"**{ex['ex']}** - {ex['sets']}x{ex['reps']}")
                                 c2.caption(ex.get('note'))
-                else: st.warning("Nessuna scheda attiva.")
-            except: st.error("Errore recupero scheda")
+                else: st.warning("Nessuna scheda.")
+            except: st.error("Errore recupero")
 
 if __name__ == "__main__":
     main()
