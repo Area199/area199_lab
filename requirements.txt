@@ -3,7 +3,7 @@ openai
 pandas
 numpy
 gspread
-oauth2client
+google-auth
 plotly
 requests
 rapidfuzz
