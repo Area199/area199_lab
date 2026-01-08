@@ -33,14 +33,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE DATI
+# 1. UTILITIES & MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
 def get_client():
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    scope = ['[https://spreadsheets.google.com/feeds](https://spreadsheets.google.com/feeds)', '[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)']
     creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
     return gspread.authorize(creds)
+
+def clean_json_response(response_text):
+    """Pulisce la risposta dell'AI se contiene markdown (```json ... ```)"""
+    if "```" in response_text:
+        # Cerca di estrarre il contenuto tra i backticks
+        match = re.search(r"```json(.*?)```", response_text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        # Fallback: rimuove solo i backticks
+        return response_text.replace("```json", "").replace("```", "").strip()
+    return response_text.strip()
 
 def clean_num(val):
     if not val: return 0.0
@@ -120,18 +131,19 @@ def find_exercise_images(name_query, db_exercises):
 
 def render_preview_card(plan_json):
     """
-    Renderizza la scheda in modo sicuro. Non crasha se mancano chiavi.
+    Renderizza la scheda in modo sicuro.
     """
     if not plan_json:
-        st.error("JSON Vuoto")
+        st.error("⚠️ ERRORE: Dati della scheda vuoti o non validi.")
         return
 
     # Gestione Maiuscole/Minuscole per la chiave 'sessions'
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     
     if not sessions:
-        st.warning("Nessuna sessione trovata nella scheda.")
-        st.write("Dati ricevuti:", plan_json) # Debug per capire cosa c'è dentro
+        st.warning("⚠️ Nessuna sessione trovata. Verifica il testo incollato.")
+        with st.expander("Vedi dati grezzi (Debug)"):
+            st.write(plan_json)
         return
 
     for session in sessions:
@@ -153,8 +165,7 @@ def render_preview_card(plan_json):
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
                     else:
-                        # Se non c'è immagine, lascia vuoto o metti placeholder
-                        pass
+                        pass # Niente immagine, niente placeholder brutti
                 
                 # Testo (Nome, Dettagli, Note)
                 with c2:
@@ -242,24 +253,35 @@ def coach_dashboard():
             if not raw_input:
                 st.error("Incolla la scheda!")
             else:
-                with st.spinner("L'AI sta lavorando..."):
+                with st.spinner("L'AI sta strutturando il programma..."):
                     prompt = f"""
-                    Converti questa scheda di allenamento grezza in JSON strutturato.
+                    Analizza il seguente testo di allenamento e convertilo in un JSON rigoroso.
                     TESTO:
                     ---
                     {raw_input}
                     ---
-                    IMPORTANTE:
-                    1. "name": Nome in ITALIANO (es. Panca Piana).
-                    2. "search_name": Nome in INGLESE per ricerca immagini (es. Barbell Bench Press).
                     
-                    OUTPUT JSON: {{ "sessions": [ {{ "name": "...", "exercises": [ {{ "name": "...", "search_name": "...", "details": "...", "note": "..." }} ] }} ] }}
+                    ISTRUZIONI:
+                    1. Identifica le Sessioni (es. "Sessione A").
+                    2. Identifica gli Esercizi.
+                    3. Per ogni esercizio estrai:
+                       - "name": Nome in ITALIANO (come nel testo).
+                       - "search_name": Nome standard in INGLESE per cercare la foto (es. "Bench Press").
+                       - "details": Serie, Reps, Recupero (es. "3x12 | 60s").
+                       - "note": Eventuali note tecniche.
+                    
+                    OUTPUT JSON SOLO (Niente testo prima o dopo):
+                    {{ "sessions": [ {{ "name": "...", "exercises": [ {{ "name": "...", "search_name": "...", "details": "...", "note": "..." }} ] }} ] }}
                     """
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
-                        res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}], response_format={"type":"json_object"})
-                        plan_json = json.loads(res.choices[0].message.content)
+                        res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}])
                         
+                        # PULIZIA RISPOSTA (Nuova funzione)
+                        clean_text = clean_json_response(res.choices[0].message.content)
+                        plan_json = json.loads(clean_text)
+                        
+                        # Arricchimento Immagini
                         for s in plan_json.get('sessions', []):
                             for ex in s.get('exercises', []):
                                 query = ex.get('search_name', ex.get('name'))
@@ -268,7 +290,11 @@ def coach_dashboard():
                         st.session_state['generated_plan'] = plan_json
                         st.session_state['coach_comment'] = comment_input
                         st.rerun() 
-                    except Exception as e: st.error(f"Errore AI: {e}")
+                    except json.JSONDecodeError as e:
+                        st.error(f"Errore formato JSON dall'AI: {e}")
+                        st.text(clean_text) # Mostra cosa ha fallito
+                    except Exception as e: 
+                        st.error(f"Errore AI Generico: {e}")
 
         if st.session_state.get('generated_plan'):
             st.markdown("---")
@@ -279,10 +305,12 @@ def coach_dashboard():
             if st.button("✅ 2. INVIA AL CLIENTE", type="primary"):
                 try:
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
+                    full_name = f"{sel_email}" 
+                    
                     db.append_row([
                         datetime.now().strftime("%Y-%m-%d"),
                         sel_email,
-                        sel_email, # Nome provvisorio per sicurezza
+                        full_name,
                         st.session_state['coach_comment'],
                         json.dumps(st.session_state['generated_plan'])
                     ])
@@ -303,7 +331,6 @@ def athlete_dashboard():
         try:
             sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
             data = sh.get_all_records()
-            # Cerca email con tolleranza spazi e maiuscole
             my_plans = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
             
             if my_plans:
@@ -315,14 +342,11 @@ def athlete_dashboard():
                 
                 st.divider()
                 
-                # Parsing JSON sicuro
-                raw_json = last_plan.get('JSON_Scheda', '{}')
                 try:
-                    plan_json = json.loads(raw_json)
+                    plan_json = json.loads(last_plan.get('JSON_Scheda', '{}'))
                     render_preview_card(plan_json)
                 except json.JSONDecodeError:
-                    st.error("Errore nel formato dei dati della scheda.")
-                    st.code(raw_json) # Mostra il raw per debug se fallisce
+                    st.error("Errore tecnico nel caricamento della scheda.")
                 except Exception as e:
                     st.error(f"Errore visualizzazione: {e}")
             else:
