@@ -7,3 +7,4 @@ oauth2client
 plotly
 requests
 rapidfuzz
+matplotlib
