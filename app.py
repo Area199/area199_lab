@@ -216,29 +216,64 @@ def main():
             st.divider()
             intensita = st.selectbox("FOCUS TECNICO", ["Standard", "RIR/RPE", "Alta Intensità (HD/VBT)"])
 
-            if st.button("🚀 GENERA E MOSTRA ANTEPRIMA"):
-                with st.spinner("Il Consigliere sta applicando la scienza..."):
+                        if st.button("🚀 GENERA E MOSTRA ANTEPRIMA"):
+                with st.spinner("Il Consigliere sta applicando la scienza AREA199..."):
+                    # Logica deterministica: costringiamo l'AI a usare le chiavi corrette
                     system_logic = f"""
-                    Sei il Dott. Antonio Petruzzi. Applica rigore biomeccanico.
-                    DATI: {json.dumps(d)}
-                    REGOLE: 
-                    1. Se farmaci (Isotretinoina/Cortisone) -> RPE max 7, NO cedimento.
-                    2. Se Addome > 94cm(M)/80cm(F) -> Alta densità, ripristino insulinico.
-                    3. Se discopatie/Overuse -> NO carico assiale.
+                    Sei il Dott. Antonio Petruzzi, direttore di AREA199. Sei un esperto biomeccanico ultra-competente.
+                    Non generare fuffa. Usa i dati per creare un protocollo d'élite.
+                    
+                    DATI INTEGRALI ATLETA (da Anamnesi/Check-up):
+                    {json.dumps(d, indent=2)}
+                    
+                    PROTOCOLLI MANDATORI:
+                    1. SICUREZZA FARMACI: Se in 'Farmaci' leggi Isotretinoina o simili -> RPE max 7, NO cedimento.
+                    2. RISCHIO METABOLICO: Se Addome > 94cm (Uomo) o > 80cm (Donna) -> Priorità densità e sensibilità insulinica.
+                    3. BIOMECCANICA: Se in 'Overuse' o 'Disfunzioni' ci sono discopatie/infortuni -> NO carico assiale (Squat/Stacchi bilanciere).
+                    4. RECUPERO: Se nel check-up lo 'Stress' è > 7 o 'Aderenza' è bassa, riduci il volume del 20%.
                     """
-                    user_req = f"Crea scheda JSON per {d['Giorni']}, {d['Minuti']}min. Intensità {intensita}."
+                    
+                    user_req = f"""
+                    Crea un protocollo per {d['Giorni']} con sessioni da {d['Minuti']} min. Intensità: {intensita}.
+                    Restituisci ESCLUSIVAMENTE un oggetto JSON con queste chiavi esatte:
+                    {{
+                        "focus": "Titolo tecnico del mesociclo",
+                        "analisi": "Analisi biomeccanica dettagliata in italiano",
+                        "tabella": {{
+                            "Giorno 1": [
+                                {{"ex": "Nome Esercizio (ENG)", "sets": "4", "reps": "10", "rest": "90s", "note": "istruzioni ITA"}}
+                            ]
+                        }}
+                    }}
+                    """
                     
                     try:
                         ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = ai.chat.completions.create(
-                            model="gpt-4o", messages=[{"role":"system","content":system_logic}, {"role":"user","content":user_req}],
-                            response_format={"type":"json_object"}
+                            model="gpt-4o", 
+                            messages=[
+                                {"role": "system", "content": system_logic},
+                                {"role": "user", "content": user_req}
+                            ],
+                            response_format={"type": "json_object"}
                         )
                         plan = json.loads(res.choices[0].message.content)
-                        for day, exs in plan.get('tabella', {}).items():
-                            for ex in exs: ex['images'] = find_exercise_images(ex['ex'], ex_db)[:2]
-                        st.session_state['active_plan'] = plan
-                    except Exception as e: st.error(f"Errore AI: {e}")
+                        
+                        # Garantiamo che le chiavi per l'anteprima esistano sempre
+                        st.session_state['active_plan'] = {
+                            "focus": plan.get('focus', 'Protocollo Personalizzato AREA199'),
+                            "analisi": plan.get('analisi', 'Analisi generata sulla base dei dati biometrici.'),
+                            "tabella": plan.get('tabella', {})
+                        }
+                        
+                        # Arricchimento immagini (Cerca nel DB degli esercizi)
+                        for day, exs in st.session_state['active_plan']['tabella'].items():
+                            for ex in exs:
+                                imgs = find_exercise_images(ex['ex'], ex_db)
+                                ex['images'] = imgs[:2]
+                                
+                    except Exception as e:
+                        st.error(f"Errore tecnico nella generazione AI: {e}")
 
             # --- AREA ANTEPRIMA (VISIBILE PRIMA DI SALVARE) ---
             if 'active_plan' in st.session_state:
@@ -246,41 +281,71 @@ def main():
                 st.subheader("📋 ANTEPRIMA PROTOCOLLO GENERATO")
                 p = st.session_state['active_plan']
                 
-                st.warning(f"**FOCUS:** {p.get('focus', 'N/D')}")
-                st.info(f"**ANALISI TECNICA:** {p.get('analisi', 'N/D')}")
+                # Qui usiamo le chiavi corrette per eliminare l'errore N/D
+                st.warning(f"**FOCUS:** {p['focus']}")
+                st.info(f"**ANALISI TECNICA:** {p['analisi']}")
                 
-                for day, exs in p.get('tabella', {}).items():
+                for day, exs in p['tabella'].items():
                     with st.container():
                         st.markdown(f"### {day}")
                         for ex in exs:
                             col1, col2 = st.columns([1,3])
-                            if ex.get('images'): col1.image(ex['images'][0], width=180)
-                            col2.write(f"**{ex['ex']}** | {ex['sets']}x{ex['reps']} | Rec: {ex['rest']}")
-                            col2.caption(f"📝 {ex.get('note','')}")
+                            with col1:
+                                if ex.get('images'):
+                                    st.image(ex['images'][0], width=180)
+                                else:
+                                    st.caption("📷 No img")
+                            with col2:
+                                st.write(f"**{ex.get('ex', 'Esercizio')}**")
+                                st.write(f"**{ex.get('sets','?')}** x **{ex.get('reps','?')}** | Rec: **{ex.get('rest','?')}**")
+                                if ex.get('note'): st.caption(f"📝 {ex['note']}")
                         st.markdown("---")
 
                 if st.button("💾 CONFERMA E SALVA NEL DATABASE"):
                     try:
                         sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                        sh.append_row([datetime.now().strftime("%Y-%m-%d"), d['Email'], f"{d['Nome']} {d['Cognome']}", json.dumps(p)])
-                        st.success("✅ Scheda salvata! L'atleta potrà ora visualizzarla.")
-                    except Exception as e: st.error(f"Errore Salvataggio: {e}")
+                        # Prepariamo la riga per il DB (Data, Email, Nome Completo, JSON)
+                        sh.append_row([
+                            datetime.now().strftime("%Y-%m-%d"), 
+                            d['Email'], 
+                            f"{d['Nome']} {d['Cognome']}", 
+                            json.dumps(p)
+                        ])
+                        st.success("✅ Protocollo archiviato con successo. L'atleta può ora visualizzarlo.")
+                    except Exception as e: 
+                        st.error(f"Errore nel salvataggio su Google Sheets: {e}")
 
-    # --- ATLETA ---
+    # --- ACCESSO ATLETA ---
     elif role == "Atleta" and pwd == "AREA199":
-        email = st.text_input("Tua Email")
-        if st.button("VEDI SCHEDA"):
+        st.title("🩸 AREA 199 | ATLETA")
+        email = st.text_input("Inserisci la tua Email")
+        if st.button("VEDI IL MIO PROTOCOLLO"):
             try:
                 sh = get_client().open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                 data = sh.get_all_records()
-                my_plan = [x for x in data if x['Email'].strip().lower() == email.strip().lower()][-1]
-                p = json.loads(my_plan['JSON_Completo'])
-                st.header(p['focus'])
-                st.info(p['analisi'])
-                for day, exs in p['tabella'].items():
-                    with st.expander(day, expanded=True):
-                        for ex in exs: st.write(f"• **{ex['ex']}**: {ex['sets']}x{ex['reps']} - {ex['note']}")
-            except: st.warning("Nessuna scheda trovata.")
+                # Cerchiamo l'ultima scheda salvata per l'email dell'atleta
+                my_plan_row = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
+                
+                if my_plan_row:
+                    last_plan = my_plan_row[-1]
+                    # Supportiamo sia la colonna 'JSON_Completo' che 'JSON'
+                    raw_json = last_plan.get('JSON_Completo') or last_plan.get('JSON')
+                    p = json.loads(raw_json)
+                    
+                    st.header(p.get('focus', 'Protocollo Allenamento'))
+                    st.info(p.get('analisi', 'Analisi tecnica non disponibile.'))
+                    
+                    for day, exs in p.get('tabella', {}).items():
+                        with st.expander(day, expanded=True):
+                            for ex in exs:
+                                st.write(f"🏋️ **{ex.get('ex')}**")
+                                st.write(f"**{ex.get('sets')}** x **{ex.get('reps')}** | Rest: **{ex.get('rest')}**")
+                                if ex.get('note'): st.caption(f"Note: {ex['note']}")
+                                st.divider()
+                else:
+                    st.warning("Nessun protocollo trovato per questa email. Contatta il Lab.")
+            except Exception as e:
+                st.error(f"Errore nel recupero della scheda: {e}")
 
 if __name__ == "__main__":
     main()
