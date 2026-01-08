@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials # NUOVA LIBRERIA
 import json
 import re
 from datetime import datetime
@@ -33,23 +33,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. UTILITIES & MOTORE DATI
+# 1. MOTORE DATI (CONNESSIONE AGGIORNATA)
 # ==============================================================================
 
 @st.cache_resource
 def get_client():
-    scope = ['[https://spreadsheets.google.com/feeds](https://spreadsheets.google.com/feeds)', '[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)']
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
+    # NUOVO METODO DI AUTENTICAZIONE STABILE
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    # Usa le credenziali dai secrets
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
 def clean_json_response(response_text):
-    """Pulisce la risposta dell'AI se contiene markdown (```json ... ```)"""
+    """Pulisce la risposta dell'AI se contiene markdown"""
     if "```" in response_text:
-        # Cerca di estrarre il contenuto tra i backticks
         match = re.search(r"```json(.*?)```", response_text, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        # Fallback: rimuove solo i backticks
+        if match: return match.group(1).strip()
         return response_text.replace("```json", "").replace("```", "").strip()
     return response_text.strip()
 
@@ -111,12 +114,12 @@ def get_full_history(email):
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
-    try: return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
+    try: return requests.get("[https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json](https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json)").json()
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return []
-    BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+    BASE_URL = "[https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/](https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/)"
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
     if match and match[1] > 60:
@@ -130,54 +133,38 @@ def find_exercise_images(name_query, db_exercises):
 # ==============================================================================
 
 def render_preview_card(plan_json):
-    """
-    Renderizza la scheda in modo sicuro.
-    """
     if not plan_json:
-        st.error("⚠️ ERRORE: Dati della scheda vuoti o non validi.")
+        st.error("⚠️ ERRORE: Dati della scheda vuoti.")
         return
 
-    # Gestione Maiuscole/Minuscole per la chiave 'sessions'
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     
     if not sessions:
-        st.warning("⚠️ Nessuna sessione trovata. Verifica il testo incollato.")
-        with st.expander("Vedi dati grezzi (Debug)"):
-            st.write(plan_json)
+        st.warning("⚠️ Nessuna sessione trovata.")
         return
 
     for session in sessions:
-        # Nome Sessione
         s_name = session.get('name', session.get('Name', 'Sessione'))
         st.markdown(f"<div class='session-header'>{s_name}</div>", unsafe_allow_html=True)
         
-        # Esercizi
         exercises = session.get('exercises', session.get('Exercises', []))
         for ex in exercises:
             with st.container():
                 c1, c2 = st.columns([2, 3])
-                
-                # Immagini
                 with c1:
                     if ex.get('images'):
                         cols_img = st.columns(2)
                         cols_img[0].image(ex['images'][0], use_container_width=True)
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
-                    else:
-                        pass # Niente immagine, niente placeholder brutti
-                
-                # Testo (Nome, Dettagli, Note)
                 with c2:
                     name = ex.get('name', ex.get('Name', 'Esercizio'))
                     details = ex.get('details', ex.get('Details', ''))
                     note = ex.get('note', ex.get('Note', ''))
                     
                     st.markdown(f"<div class='exercise-name'>{name}</div>", unsafe_allow_html=True)
-                    if details:
-                        st.markdown(f"<div class='exercise-details'>{details}</div>", unsafe_allow_html=True)
-                    if note:
-                        st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
+                    if details: st.markdown(f"<div class='exercise-details'>{details}</div>", unsafe_allow_html=True)
+                    if note: st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
             st.divider()
 
 # ==============================================================================
@@ -277,11 +264,9 @@ def coach_dashboard():
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}])
                         
-                        # PULIZIA RISPOSTA (Nuova funzione)
                         clean_text = clean_json_response(res.choices[0].message.content)
                         plan_json = json.loads(clean_text)
                         
-                        # Arricchimento Immagini
                         for s in plan_json.get('sessions', []):
                             for ex in s.get('exercises', []):
                                 query = ex.get('search_name', ex.get('name'))
@@ -292,7 +277,6 @@ def coach_dashboard():
                         st.rerun() 
                     except json.JSONDecodeError as e:
                         st.error(f"Errore formato JSON dall'AI: {e}")
-                        st.text(clean_text) # Mostra cosa ha fallito
                     except Exception as e: 
                         st.error(f"Errore AI Generico: {e}")
 
