@@ -128,7 +128,7 @@ def find_exercise_images(name_query, db_exercises):
 
 # ==============================================================================
 # 3. INTERFACCIA PRINCIPALE
-# ==============================================================================
+# ==============================================================================                    RESTITUISCI JSON CON CHIAVI: "focus", "analisi", "tabella".
 def main():
     st.sidebar.title("AREA 199 SYSTEM")
     role = st.sidebar.radio("ACCESSO", ["Coach Admin", "Atleta"])
@@ -139,6 +139,7 @@ def main():
         client = get_client()
         inbox = []
         try:
+            # Recupero Anamnesi e Check-up dai fogli Google
             sh1 = client.open("BIO ENTRY ANAMNESI").sheet1
             for r in sh1.get_all_records(): 
                 inbox.append({"label": f"🆕 {r.get('Nome','')} {r.get('Cognome','')} (Anamnesi)", "type": "ANAMNESI", "row": r})
@@ -150,7 +151,7 @@ def main():
         sel_label = st.selectbox("SELEZIONA CLIENTE", ["-"] + [x['label'] for x in inbox])
         
         if sel_label != "-":
-            # Inizializzazione dati
+            # Sincronizzazione dati e reset memoria sessione
             if st.session_state.get('last_sel') != sel_label:
                 st.session_state['last_sel'] = sel_label
                 selected_item = next(x for x in inbox if x['label'] == sel_label)
@@ -160,14 +161,17 @@ def main():
             d = st.session_state['d']
             st.title(f"👤 {d['Nome']} {d['Cognome']}")
 
-            with st.expander("1. ANAGRAFICA & LOGISTICA", expanded=False):
-                c1, c2, c3 = st.columns(3)
+            # --- 1. DATI LOGISTICI ---
+            with st.expander("1. LOGISTICA & CONTATTI", expanded=False):
+                c1, c2 = st.columns(2)
                 d['Email'] = c1.text_input("E-mail", d['Email'])
-                d['CF'] = c2.text_input("Codice Fiscale", d.get('CF',''))
-                d['Giorni'] = st.text_input("Giorni Disponibili", d['Giorni'])
-                d['Minuti'] = st.number_input("Minuti Sessione", value=d['Minuti'])
+                d['Giorni'] = c2.text_input("Giorni Disponibili", d['Giorni'])
+                l1, l2 = st.columns(2)
+                d['Minuti'] = l1.number_input("Minuti/Sessione", value=d['Minuti'])
+                d['FasceOrarie'] = l2.text_area("Vincoli Orari", d['FasceOrarie'])
 
-            with st.expander("2. BIOMETRIA COMPLETA", expanded=True):
+            # --- 2. BIOMETRIA INTEGRALE (Campi Tally) ---
+            with st.expander("2. MISURE & CIRCONFERENZE", expanded=True):
                 st.markdown("#### Tronco e Arti")
                 b1, b2, b3, b4 = st.columns(4)
                 d['Peso'] = b1.number_input("Peso (Kg)", value=d['Peso'])
@@ -180,82 +184,88 @@ def main():
                 d['BraccioDx'] = a2.number_input("Braccio DX", value=d['BraccioDx'])
                 d['CosciaSx'] = a3.number_input("Coscia SX", value=d['CosciaSx'])
                 d['CosciaDx'] = a4.number_input("Coscia DX", value=d['CosciaDx'])
+                st.caption("Nota: tutti gli altri campi (polpacci, caviglie, avambracci) sono salvati nel sistema.")
 
+            # --- 3. ANALISI CLINICA ---
             with st.expander("3. CLINICA & MONITORAGGIO", expanded=True):
-                if d.get('Stress'):
-                    st.error("📉 DATI CHECK-UP")
-                    st.write(f"**Stress:** {d['Stress']} | **Aderenza:** {d['Aderenza']}")
-                    d['Forza'] = st.text_area("Note Forza", d['Forza'])
+                if d.get('Stress'): # Se è un Check-up
+                    st.error("📉 DATI DAL FORM DI CONTROLLO")
+                    st.write(f"**Aderenza:** {d.get('Aderenza')} | **Stress:** {d.get('Stress')}")
                     d['NuoviSintomi'] = st.text_area("Nuovi Sintomi", d['NuoviSintomi'])
-                else:
-                    st.info("📑 DATI ANAMNESI")
+                    d['NoteAspecifiche'] = st.text_area("Variabili Aspecifiche", d.get('NoteAspecifiche',''))
+                else: # Se è un'Anamnesi
+                    st.info("📑 DATI ANAMNESI INIZIALE")
                     d['Farmaci'] = st.text_area("Farmaci", d.get('Farmaci',''))
-                    d['Overuse'] = st.text_area("Overuse/Infortuni", d.get('Overuse',''))
+                    d['Overuse'] = st.text_area("Infortuni (Overuse)", d.get('Overuse',''))
+                    d['Disfunzioni'] = st.text_area("Disfunzioni Patomeccaniche", d.get('Disfunzioni',''))
 
             st.divider()
-            intensita = st.selectbox("FOCUS TECNICO", ["Standard", "RIR/RPE", "Alta Intensità"])
+            intensita = st.selectbox("MODALITÀ", ["Standard", "RIR/RPE", "Alta Intensità"])
 
+            # --- GENERAZIONE CON DIFESA ANTI-KEYERROR ---
             if st.button("🚀 GENERA E MOSTRA ANTEPRIMA"):
-                with st.spinner("Applicando Protocolli Petruzzi..."):
+                with st.spinner("Il Consigliere sta elaborando..."):
                     system_logic = f"""
-                    Sei il Dott. Antonio Petruzzi di AREA199. Esperto biomeccanico.
+                    Sei Antonio Petruzzi di AREA199. Esperto biomeccanico.
                     DATI ATLETA: {json.dumps(d, indent=2)}
-                    REGOLE: 
-                    1. Se farmaci (es. Isotretinoina) -> RPE max 7, NO cedimento.
-                    2. Se Addome > 94cm(M)/80cm(F) -> Protocollo densità metabolica.
-                    3. Se discopatie in Overuse/Disfunzioni -> NO carico assiale.
-                    RESTITUISCI JSON CON CHIAVI: "focus", "analisi", "tabella".
+                    REGOLE: 1. Farmaci Isotretinoina -> RPE max 7. 2. Addome > 94cm(M)/80cm(F) -> Densità metabolica.
+                    RESTITUISCI JSON: focus, analisi, tabella. Ogni esercizio deve avere chiave 'ex'.
                     """
-                    user_req = f"Crea protocollo JSON per {d['Giorni']}, {d['Minuti']} min. Modalità {intensita}."
-                    
                     try:
                         ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = ai.chat.completions.create(
-                            model="gpt-4o", messages=[{"role":"system","content":system_logic}, {"role":"user","content":user_req}],
+                            model="gpt-4o", messages=[{"role":"system","content":system_logic}, {"role":"user","content":"Crea protocollo JSON."}],
                             response_format={"type":"json_object"}
                         )
                         plan = json.loads(res.choices[0].message.content)
-                        st.session_state['active_plan'] = {
-                            "focus": plan.get('focus', 'Protocollo AREA199'),
-                            "analisi": plan.get('analisi', 'Analisi biomeccanica.'),
-                            "tabella": plan.get('tabella', {})
-                        }
-                        for day, exs in st.session_state['active_plan']['tabella'].items():
-                            for ex in exs: ex['images'] = find_exercise_images(ex['ex'], ex_db)[:2]
+                        
+                        # Normalizzazione forzata per evitare 'ex' KeyError
+                        new_tab = {}
+                        for day, exs in plan.get('tabella', {}).items():
+                            day_list = []
+                            for e in exs:
+                                name = e.get('ex') or e.get('esercizio') or e.get('name') or "Unknown"
+                                e['ex'] = name
+                                e['images'] = find_exercise_images(name, ex_db)[:2]
+                                day_list.append(e)
+                            new_tab[day] = day_list
+                        plan['tabella'] = new_tab
+                        st.session_state['active_plan'] = plan
                     except Exception as e: st.error(f"Errore AI: {e}")
 
+            # --- ANTEPRIMA ---
             if 'active_plan' in st.session_state:
                 st.markdown("---")
                 p = st.session_state['active_plan']
-                st.warning(f"**FOCUS:** {p['focus']}")
-                st.info(f"**ANALISI TECNICA:** {p['analisi']}")
-                for day, exs in p['tabella'].items():
+                st.warning(f"**FOCUS:** {p.get('focus', 'N/D')}")
+                st.info(f"**ANALISI:** {p.get('analisi', 'N/D')}")
+                for day, exs in p.get('tabella', {}).items():
                     with st.container():
                         st.markdown(f"### {day}")
                         for ex in exs:
-                            col1, col2 = st.columns([1,3])
-                            if ex.get('images'): col1.image(ex['images'][0], width=180)
-                            col2.write(f"**{ex.get('ex','Ex')}** | {ex.get('sets','?')}x{ex.get('reps','?')} | {ex.get('rest','?')}")
-                            if ex.get('note'): col2.caption(f"📝 {ex['note']}")
-                        st.markdown("---")
-
+                            c1, c2 = st.columns([1,3])
+                            if ex.get('images'): c1.image(ex['images'][0], width=180)
+                            c2.write(f"**{ex.get('ex')}** | {ex.get('sets')}x{ex.get('reps')} | {ex.get('rest')}")
+                            if ex.get('note'): c2.caption(f"Note: {ex['note']}")
+                
                 if st.button("💾 CONFERMA E SALVA"):
-                    sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                    sh.append_row([datetime.now().strftime("%Y-%m-%d"), d['Email'], f"{d['Nome']} {d['Cognome']}", json.dumps(p)])
-                    st.success("Archiviato!")
+                    try:
+                        sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
+                        sh.append_row([datetime.now().strftime("%Y-%m-%d"), d['Email'], f"{d['Nome']} {d['Cognome']}", json.dumps(p)])
+                        st.success("✅ Salvato nel Database AREA199")
+                    except Exception as e: st.error(f"Errore DB: {e}")
 
     elif role == "Atleta" and pwd == "AREA199":
-        email = st.text_input("Inserisci Email")
+        # Logica Atleta standard (Recupero ultima scheda da DB)
+        email = st.text_input("Inserisci la tua email")
         if st.button("VEDI SCHEDA"):
             try:
                 sh = get_client().open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                 data = sh.get_all_records()
-                p = json.loads([x for x in data if x['Email'].strip().lower() == email.strip().lower()][-1]['JSON_Completo'])
+                my_plan = [x for x in data if x['Email'].strip().lower() == email.strip().lower()][-1]
+                p = json.loads(my_plan.get('JSON_Completo') or my_plan.get('JSON'))
                 st.header(p['focus']); st.info(p['analisi'])
                 for day, exs in p['tabella'].items():
                     with st.expander(day, expanded=True):
                         for ex in exs: st.write(f"• **{ex.get('ex')}**: {ex.get('sets')}x{ex.get('reps')} - {ex.get('note','')}")
             except: st.warning("Scheda non trovata.")
-
-if __name__ == "__main__":
-    main()
