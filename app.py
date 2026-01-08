@@ -33,7 +33,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE DATI
+# 1. MOTORE DATI (FIX PUNTO/VIRGOLA)
 # ==============================================================================
 
 @st.cache_resource
@@ -43,9 +43,20 @@ def get_client():
     return gspread.authorize(creds)
 
 def clean_num(val):
+    """
+    Pulisce i numeri accettando sia punto che virgola.
+    Es: "75,5 kg" -> 75.5 | "75.5" -> 75.5
+    """
     if not val: return 0.0
-    s = str(val).lower().replace(',', '.').replace('kg', '').replace('cm', '').strip()
-    try: return float(re.search(r"[-+]?\d*\.\d+|\d+", s).group())
+    # 1. Sostituisce virgola con punto
+    s = str(val).replace(',', '.')
+    # 2. Rimuove tutto ciò che non è numero o punto
+    # (Mantiene solo il primo numero trovato)
+    try: 
+        match = re.search(r"[-+]?\d*\.\d+|\d+", s)
+        if match:
+            return float(match.group())
+        return 0.0
     except: return 0.0
 
 def normalize_key(key):
@@ -96,7 +107,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI
+# 2. MOTORE AI & IMMAGINI (FIX NOMI INGLESE/ITALIANO)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -104,11 +115,17 @@ def load_exercise_db():
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
+    """
+    Cerca le immagini usando il nome INGLESE (search_name) fornito dall'AI
+    """
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     db_names = [x['name'] for x in db_exercises]
+    
+    # Cerca match sul nome inglese
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
-    if match and match[1] > 65:
+    
+    if match and match[1] > 60:
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
@@ -119,12 +136,11 @@ def find_exercise_images(name_query, db_exercises):
 # ==============================================================================
 
 def render_preview_card(plan_json):
-    """Renderizza la scheda (usata sia per anteprima coach che per atleta)"""
+    """Renderizza la scheda (Anteprima e Atleta)"""
     for session in plan_json.get('sessions', []):
         st.markdown(f"<div class='session-header'>{session['name']}</div>", unsafe_allow_html=True)
         
         for ex in session.get('exercises', []):
-            # Container Esercizio
             with st.container():
                 c1, c2 = st.columns([2, 3])
                 
@@ -136,9 +152,10 @@ def render_preview_card(plan_json):
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
                     else:
-                        st.markdown("<div style='height:100px; display:flex; align-items:center; justify-content:center; background:#222; color:#555;'>NO IMG</div>", unsafe_allow_html=True)
+                        # Placeholder se non trova immagini
+                        st.markdown(f"<div style='padding:10px; background:#222; color:#555; font-size:0.8em;'>No img for: {ex.get('search_name','')}</div>", unsafe_allow_html=True)
                 
-                # Testo
+                # Testo (Nome in ITALIANO)
                 with c2:
                     st.markdown(f"<div class='exercise-name'>{ex['name']}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='exercise-details'>{ex.get('details','')}</div>", unsafe_allow_html=True)
@@ -153,7 +170,9 @@ def coach_dashboard():
     # 1. SELEZIONE ATLETA
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
-        emails = sorted(list(set([r.get('E-mail') or r.get('Email') for r in sh_ana.get_all_records() if r.get('E-mail') or r.get('Email')])))
+        # Raccoglie email uniche ignorando case sensitive
+        raw_emails = [str(r.get('E-mail') or r.get('Email')).strip().lower() for r in sh_ana.get_all_records()]
+        emails = sorted(list(set([e for e in raw_emails if e and e != 'none'])))
     except: st.error("⚠️ Errore critico: Impossibile leggere BIO ENTRY ANAMNESI"); return
 
     sel_email = st.selectbox("SELEZIONA ATLETA", [""] + emails)
@@ -162,44 +181,48 @@ def coach_dashboard():
         # Pulisce session state se cambio atleta
         if 'current_athlete' not in st.session_state or st.session_state['current_athlete'] != sel_email:
             st.session_state['current_athlete'] = sel_email
-            st.session_state['generated_plan'] = None # Reset piano
+            st.session_state['generated_plan'] = None
             st.session_state['coach_comment'] = ""
 
         history = get_full_history(sel_email)
-        if not history: st.warning("Nessun dato storico trovato."); return
-
+        
         # --- VIEW TREND & GRAFICI ---
-        last = history[-1]
-        is_first_visit = len(history) == 1
         st.header(f"Analisi: {sel_email}")
         
-        if is_first_visit:
-            st.info("🆕 PRIMA VISITA - Dati Base")
-            cols = st.columns(4)
-            for i, (k, v) in enumerate(last.items()):
-                if isinstance(v, (int, float)) and v > 0: cols[i % 4].metric(k, f"{v}")
+        if not history:
+            st.warning("Nessun dato storico trovato (Controlla che l'email nel file Anamnesi sia identica).")
         else:
-            st.success(f"📈 CONTROLLO ({len(history)} record)")
-            metrics_keys = [k for k, v in last.items() if isinstance(v, (int, float)) and v > 0]
-            row_cols = st.columns(3)
-            for i, key in enumerate(metrics_keys):
-                vals = [h.get(key, 0) for h in history]
-                curr = vals[-1]; prev = vals[-2]; start = vals[0]
-                d_prev = curr - prev
-                d_start = curr - start
-                
-                with row_cols[i % 3]:
-                    st.markdown(f"""
-                    <div class="metric-box">
-                        <div style="color:#888;">{key}</div>
-                        <div style="font-size:1.8em; color:white;">{curr}</div>
-                        <div style="display:flex; justify-content:space-between; font-size:0.9em;">
-                            <span style="color:{'#4ade80' if d_prev<0 else '#f87171'}">Prev: {d_prev:+.1f}</span>
-                            <span style="color:#888">Start: {d_start:+.1f}</span>
+            last = history[-1]
+            is_first_visit = len(history) == 1
+            
+            if is_first_visit:
+                st.info("🆕 PRIMA VISITA - Dati Base")
+                cols = st.columns(4)
+                for i, (k, v) in enumerate(last.items()):
+                    if isinstance(v, (int, float)) and v > 0: cols[i % 4].metric(k, f"{v}")
+            else:
+                st.success(f"📈 CONTROLLO ({len(history)} record)")
+                metrics_keys = [k for k, v in last.items() if isinstance(v, (int, float)) and v > 0]
+                row_cols = st.columns(3)
+                for i, key in enumerate(metrics_keys):
+                    vals = [h.get(key, 0) for h in history]
+                    curr = vals[-1]; prev = vals[-2]; start = vals[0]
+                    d_prev = curr - prev
+                    d_start = curr - start
+                    
+                    with row_cols[i % 3]:
+                        st.markdown(f"""
+                        <div class="metric-box">
+                            <div style="color:#888;">{key}</div>
+                            <div style="font-size:1.8em; color:white;">{curr}</div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.9em;">
+                                <span style="color:{'#4ade80' if d_prev<0 else '#f87171'}">Prev: {d_prev:+.1f}</span>
+                                <span style="color:#888">Start: {d_start:+.1f}</span>
+                            </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.line_chart(pd.DataFrame(vals), height=100)
+                        """, unsafe_allow_html=True)
+                        if len(vals) > 1:
+                            st.line_chart(pd.DataFrame(vals), height=100)
 
         st.divider()
 
@@ -219,42 +242,63 @@ def coach_dashboard():
             if not raw_input:
                 st.error("Devi incollare la scheda per generare l'anteprima!")
             else:
-                with st.spinner("L'AI sta analizzando la scheda e cercando le foto..."):
+                with st.spinner("L'AI sta strutturando il programma..."):
+                    # PROMPT TRUCCATO: Chiede il nome in Italiano PER L'UTENTE e in Inglese PER LA RICERCA FOTO
                     prompt = f"""
                     Converti questa scheda di allenamento grezza in un JSON strutturato.
                     TESTO SCHEDA:
                     ---
                     {raw_input}
                     ---
-                    OUTPUT JSON: {{ "sessions": [ {{ "name": "...", "exercises": [ {{ "name": "...", "details": "...", "note": "..." }} ] }} ] }}
-                    Mantieni i nomi esercizi in ITALIANO.
+                    
+                    IMPORTANTE:
+                    Per ogni esercizio devi generare DUE campi nome:
+                    1. "name": Il nome esattamente come scritto nel testo (es. "Panca Piana").
+                    2. "search_name": La traduzione standard in INGLESE per cercare la foto nel database (es. "Barbell Bench Press").
+                    
+                    OUTPUT JSON: 
+                    {{ 
+                        "sessions": [ 
+                            {{ 
+                                "name": "Nome Sessione", 
+                                "exercises": [ 
+                                    {{ 
+                                        "name": "Nome Italiano", 
+                                        "search_name": "English Name",
+                                        "details": "3x10...", 
+                                        "note": "..." 
+                                    }} 
+                                ] 
+                            }} 
+                        ] 
+                    }}
                     """
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}], response_format={"type":"json_object"})
                         plan_json = json.loads(res.choices[0].message.content)
                         
-                        # Cerca immagini
+                        # Cerca immagini usando "search_name" (Inglese)
                         for s in plan_json.get('sessions', []):
                             for ex in s.get('exercises', []):
-                                ex['images'] = find_exercise_images(ex['name'], ex_db)[:2]
+                                # Usa il nome inglese per cercare, se c'è, altrimenti quello base
+                                query = ex.get('search_name', ex['name'])
+                                ex['images'] = find_exercise_images(query, ex_db)[:2]
                         
-                        # SALVA IN SESSION STATE (Non su DB ancora)
+                        # SALVA IN SESSION STATE
                         st.session_state['generated_plan'] = plan_json
                         st.session_state['coach_comment'] = comment_input
-                        st.rerun() # Ricarica per mostrare l'anteprima sotto
+                        st.rerun() 
                     except Exception as e: st.error(f"Errore AI: {e}")
 
         # --- ZONA ANTEPRIMA & CONFERMA ---
         if st.session_state.get('generated_plan'):
             st.markdown("---")
-            st.subheader("👁️ ANTEPRIMA (Quello che vedrà l'atleta)")
+            st.subheader("👁️ ANTEPRIMA")
             
-            # Mostra commento
             if st.session_state['coach_comment']:
                 st.info(f"💬 **Tuo Commento:** {st.session_state['coach_comment']}")
             
-            # Renderizza Scheda
             render_preview_card(st.session_state['generated_plan'])
             
             st.markdown("---")
@@ -262,7 +306,7 @@ def coach_dashboard():
             if st.button("✅ 2. CONFERMA E INVIA AL CLIENTE", type="primary"):
                 try:
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                    full_name = f"{sel_email}" # Fallback
+                    full_name = f"{sel_email}" 
                     
                     db.append_row([
                         datetime.now().strftime("%Y-%m-%d"),
@@ -272,11 +316,10 @@ def coach_dashboard():
                         json.dumps(st.session_state['generated_plan'])
                     ])
                     st.success("SCHEDA SALVATA E INVIATA CORRETTAMENTE!")
-                    # Pulisci
                     st.session_state['generated_plan'] = None
                 except Exception as e:
                     st.error(f"❌ Errore Salvataggio DB: {e}")
-                    st.warning("Controlla che il foglio 'SCHEDE_ATTIVE' esista e abbia le colonne: Data, Email, Nome, Commento, JSON_Scheda")
+                    st.warning("Controlla che il foglio 'SCHEDE_ATTIVE' esista.")
 
 # ==============================================================================
 # 4. INTERFACCIA ATLETA
@@ -291,7 +334,6 @@ def athlete_dashboard():
         try:
             sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
             data = sh.get_all_records()
-            # Filtra per email
             my_plans = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
             
             if my_plans:
@@ -299,13 +341,11 @@ def athlete_dashboard():
                 
                 st.title(f"Scheda del {last_plan['Data']}")
                 
-                # COMMENTO
                 if last_plan.get('Commento'):
                     st.info(f"💬 **Messaggio dal Coach:**\n\n{last_plan['Commento']}")
                 
                 st.divider()
                 
-                # SCHEDA
                 try:
                     plan_json = json.loads(last_plan.get('JSON_Scheda', '{}'))
                     render_preview_card(plan_json)
