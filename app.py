@@ -2,355 +2,321 @@ import streamlit as st
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import matplotlib.pyplot as plt
 import datetime
+import re
 
 # ==============================================================================
-# 1. CONFIGURAZIONE E CONNESSIONE
+# CONFIGURAZIONE
 # ==============================================================================
-st.set_page_config(page_title="AREA 199 | Performance System", layout="wide", page_icon="🏋️")
+st.set_page_config(page_title="AREA 199 | COACHING STATION", layout="wide", page_icon="🏋️")
 
-# Stile CSS Personalizzato (Tema Dark/Red)
 st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    h1, h2, h3 { color: #E20613 !important; }
-    .metric-card { background-color: #1f2937; padding: 15px; border-radius: 8px; border-left: 5px solid #E20613; margin-bottom: 10px; }
-    .delta-pos { color: #4ade80; font-weight: bold; }
-    .delta-neg { color: #f87171; font-weight: bold; }
-    .stButton>button { width: 100%; border: 1px solid #E20613; color: #E20613; background-color: transparent; }
+<style>
+    .stApp { background-color: #0e1117; color: white; }
+    h1, h2, h3 { color: #E20613 !important; text-transform: uppercase; }
+    .metric-container { background-color: #1f2937; padding: 15px; border-radius: 8px; border-left: 5px solid #E20613; margin-bottom: 10px; }
+    .delta-pos { color: #4ade80; font-size: 0.9em; } /* Verde */
+    .delta-neg { color: #f87171; font-size: 0.9em; } /* Rosso */
+    .session-header { color: #E20613; font-size: 1.2em; font-weight: bold; margin-top: 20px; border-bottom: 1px solid #333; }
+    .exercise-title { font-weight: bold; font-size: 1.1em; color: white; margin-top: 10px; }
+    .exercise-note { color: #aaa; font-style: italic; font-size: 0.9em; border-left: 2px solid #555; padding-left: 10px; margin-top: 5px;}
+    .stButton>button { width: 100%; border: 1px solid #E20613; color: #E20613; font-weight: bold; }
     .stButton>button:hover { background-color: #E20613; color: white; }
-    </style>
+</style>
 """, unsafe_allow_html=True)
 
+# ==============================================================================
+# 1. GESTIONE DATI (CONNESSIONE AI 3 FILE DIVERSI)
+# ==============================================================================
+
 @st.cache_resource
-def get_google_sheet_client():
+def get_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    # Assicurati di avere i secrets configurati correttamente in .streamlit/secrets.toml
     creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
     return gspread.authorize(creds)
 
-def load_data(sheet_name):
-    client = get_google_sheet_client()
-    try:
-        sheet = client.open("AREA199_DB").worksheet(sheet_name) # Assumiamo che il file si chiami AREA199_DB
-        data = sheet.get_all_records()
-        return pd.DataFrame(data)
-    except Exception as e:
-        return pd.DataFrame()
+def clean_value(val):
+    """Pulisce i valori numerici (toglie 'kg', 'cm', virgole)"""
+    if not val: return 0.0
+    s = str(val).lower().replace(',', '.').replace('kg', '').replace('cm', '').strip()
+    try: return float(re.search(r"[-+]?\d*\.\d+|\d+", s).group())
+    except: return 0.0
 
-# ==============================================================================
-# 2. LOGICA DI ELABORAZIONE DATI
-# ==============================================================================
-
-def get_athlete_history(email, df_anamnesi, df_checkup):
-    """Recupera e unisce lo storico di un atleta ordinato per data."""
+def get_history(email):
+    """Scarica e unisce i dati dai DUE file separati (Anamnesi e Checkup)"""
+    client = get_client()
     history = []
-    
-    # Normalizzazione email
-    email = email.strip().lower()
-    
-    # Dati Anamnesi (Start Point)
-    if not df_anamnesi.empty:
-        user_anamnesi = df_anamnesi[df_anamnesi['E-mail'].str.strip().str.lower() == email]
-        for _, row in user_anamnesi.iterrows():
-            row_dict = row.to_dict()
-            row_dict['Tipo'] = 'Anamnesi'
-            # Normalizza data (Tally format)
-            try: row_dict['DateObj'] = pd.to_datetime(row['Submitted at'])
-            except: row_dict['DateObj'] = datetime.datetime.now()
-            history.append(row_dict)
+    clean_email = str(email).strip().lower()
 
-    # Dati Check-up (Follow up)
-    if not df_checkup.empty:
-        user_checkup = df_checkup[df_checkup['E-mail'].str.strip().str.lower() == email]
-        for _, row in user_checkup.iterrows():
-            row_dict = row.to_dict()
-            row_dict['Tipo'] = 'Check-up'
-            try: row_dict['DateObj'] = pd.to_datetime(row['Submitted at'])
-            except: row_dict['DateObj'] = datetime.datetime.now()
-            history.append(row_dict)
-            
-    # Ordina per data
-    history.sort(key=lambda x: x['DateObj'])
+    # 1. FILE ANAMNESI (Prima Visita)
+    try:
+        sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
+        data_ana = sh_ana.get_all_records()
+        for r in data_ana:
+            if str(r.get('E-mail', r.get('Email',''))).strip().lower() == clean_email:
+                r['SOURCE'] = 'ANAMNESI'
+                # Normalizza Data
+                try: r['DATE_OBJ'] = datetime.datetime.strptime(r['Submitted at'], '%d/%m/%Y %H:%M:%S')
+                except: r['DATE_OBJ'] = datetime.datetime.now() # Fallback
+                history.append(r)
+    except Exception as e: st.error(f"Errore lettura Anamnesi: {e}")
+
+    # 2. FILE CHECK-UP (Controlli)
+    try:
+        sh_check = client.open("BIO CHECK-UP").sheet1
+        data_check = sh_check.get_all_records()
+        for r in data_check:
+            if str(r.get('E-mail', r.get('Email',''))).strip().lower() == clean_email:
+                r['SOURCE'] = 'CHECKUP'
+                try: r['DATE_OBJ'] = datetime.datetime.strptime(r['Submitted at'], '%d/%m/%Y %H:%M:%S')
+                except: r['DATE_OBJ'] = datetime.datetime.now()
+                history.append(r)
+    except Exception as e: pass # Se non ci sono checkup fa nulla
+
+    # Ordina per data (dal più vecchio al più recente)
+    history.sort(key=lambda x: x['DATE_OBJ'])
     return history
 
-def calculate_deltas(current_val, prev_val, start_val):
-    """Calcola differenze e ritorna stringhe formattate."""
-    def safe_float(v):
-        if isinstance(v, (int, float)): return v
-        try: return float(str(v).replace(',', '.').replace('kg', '').replace('cm', '').strip())
-        except: return 0.0
-
-    curr = safe_float(current_val)
-    prev = safe_float(prev_val)
-    start = safe_float(start_val)
-    
-    d_prev = curr - prev
-    d_start = curr - start
-    
-    return d_prev, d_start
-
-def parse_training_plan(raw_text):
-    """
-    Analizza il testo incollato dal coach e lo struttura per l'atleta.
-    Cerca pattern come 'Sessione A', esercizi in maiuscolo, ecc.
-    """
-    lines = raw_text.split('\n')
-    structured_plan = []
-    current_session = "Note Generali"
+def parse_schedule_text(text):
+    """Trasforma il testo incollato in una struttura dati per l'atleta"""
+    lines = text.split('\n')
+    structured = []
     
     for line in lines:
         line = line.strip()
         if not line: continue
         
-        # Rileva Sessioni
+        # Riconoscimento pattern
         if "SESSIONE" in line.upper() or "GIORNO" in line.upper():
-            current_session = line
-            structured_plan.append({"type": "session", "content": line})
-        # Rileva Note/Commenti
-        elif line.startswith("Nota:") or line.startswith("Obiettivo:"):
-            structured_plan.append({"type": "note", "content": line})
-        # Rileva Esercizi (Assumiamo che siano linee in MAIUSCOLO non sessioni)
+            structured.append({"type": "SESSION", "text": line})
+        elif "Nota:" in line or "Obiettivo:" in line:
+            structured.append({"type": "NOTE", "text": line})
+        elif any(char.isdigit() for char in line) and ("x" in line or "serie" in line):
+             structured.append({"type": "SETS", "text": line})
+        # Se è tutto maiuscolo (o quasi) e non è una sessione -> Esercizio
         elif line.isupper() and len(line) > 3:
-            structured_plan.append({"type": "exercise", "content": line})
-        # Rileva Serie/Reps
-        elif "serie" in line.lower() or "x" in line.lower():
-            structured_plan.append({"type": "details", "content": line})
+             structured.append({"type": "EXERCISE", "text": line})
         else:
-            structured_plan.append({"type": "text", "content": line})
-            
-    return structured_plan
+             structured.append({"type": "TEXT", "text": line})
+             
+    return structured
 
 # ==============================================================================
-# 3. INTERFACCIA COACH
+# 2. LOGICA COACH
 # ==============================================================================
 
-def coach_dashboard():
-    st.sidebar.header("pannello Coach")
+def coach_interface():
+    client = get_client()
     
-    # Caricamento Dati
-    df_ana = load_data("BIO ENTRY ANAMNESI") # Nome foglio Anamnesi
-    df_chk = load_data("BIO CHECK-UP")       # Nome foglio Check-up
-    
-    if df_ana.empty:
-        st.error("Impossibile caricare il database anamnesi.")
+    # Recupera lista atleti UNICA dai file
+    try:
+        sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
+        all_emails = [r.get('E-mail') or r.get('Email') for r in sh_ana.get_all_records()]
+        unique_emails = sorted(list(set([e for e in all_emails if e])))
+    except:
+        st.error("Impossibile accedere al file 'BIO ENTRY ANAMNESI'. Verifica il nome.")
         return
 
-    # Lista Atleti unici
-    emails = df_ana['E-mail'].unique().tolist()
-    selected_email = st.sidebar.selectbox("Seleziona Atleta", [""] + emails)
-    
-    if selected_email:
-        history = get_athlete_history(selected_email, df_ana, df_chk)
+    sel_email = st.selectbox("Seleziona Atleta", [""] + unique_emails)
+
+    if sel_email:
+        history = get_history(sel_email)
         
         if not history:
-            st.warning("Nessun dato trovato per questo atleta.")
+            st.warning("Dati non trovati.")
             return
-            
-        latest_data = history[-1]
-        is_first_visit = len(history) == 1
+
+        last_entry = history[-1]
+        first_entry = history[0]
         
-        st.title(f"Atleta: {latest_data.get('Nome', '')} {latest_data.get('Cognome', '')}")
-        st.caption(f"Ultimo aggiornamento: {latest_data.get('DateObj').strftime('%d/%m/%Y')}")
-
-        # --- TAB VIEW ---
-        tab1, tab2, tab3 = st.tabs(["📊 Dati & Trend", "📝 Scheda & Commenti", "📋 Info Complete"])
+        # HEADER ATLETA
+        nome = f"{last_entry.get('Nome','')} {last_entry.get('Cognome','')}"
+        st.header(f"👤 {nome}")
+        st.markdown(f"**Email:** {sel_email} | **Ingressi totali:** {len(history)}")
         
-        with tab1:
-            if is_first_visit:
-                st.info("📌 Questa è la **PRIMA VISITA**. Visualizzazione dati base.")
-                # Visualizzazione statica
-                cols = st.columns(4)
-                cols[0].metric("Peso", f"{latest_data.get('Peso Kg', 'N/A')} Kg")
-                cols[1].metric("Altezza", f"{latest_data.get('Altezza in cm', 'N/A')} cm")
-                cols[2].metric("Addome", f"{latest_data.get('Addome cm', 'N/A')} cm")
-                cols[3].metric("Stress", "N/A")
-            else:
-                st.success(f"📌 Visita di **CONTROLLO** (Totale ingressi: {len(history)})")
+        # --- SEZIONE 1: ANALISI DATI (Grafici e Delta) ---
+        st.divider()
+        st.subheader("1. ANALISI TREND")
+
+        if len(history) == 1:
+            st.info("📌 Questa è la **PRIMA VISITA**. Visualizzo i dati base.")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Peso", f"{clean_value(last_entry.get('Peso Kg'))} Kg")
+            c2.metric("Addome", f"{clean_value(last_entry.get('Addome cm'))} cm")
+            c3.metric("Torace", f"{clean_value(last_entry.get('Torace in cm'))} cm")
+            c4.metric("Fianchi", f"{clean_value(last_entry.get('Fianchi cm'))} cm")
+        else:
+            # È UN CONTROLLO -> MOSTRIAMO I GRAFICI CON I DELTA
+            
+            # Parametri da analizzare (Nome visualizzato -> Chiave nel DB)
+            metrics = {
+                "Peso Corporeo": ["Peso Kg", "Peso"],
+                "Addome (Vita)": ["Addome cm"],
+                "Torace": ["Torace in cm"],
+                "Fianchi": ["Fianchi cm"],
+                "Braccio Dx": ["Braccio Dx cm", "Braccio Dx"],
+                "Coscia Dx": ["Coscia Dx cm", "Coscia Dx"]
+            }
+            
+            # Griglia grafici
+            cols = st.columns(3)
+            idx = 0
+            
+            for label, keys in metrics.items():
+                # Estrai serie storica
+                dates = []
+                values = []
                 
-                # Setup Grafici
-                metrics_to_plot = {
-                    "Peso Corporeo": "Peso Kg",
-                    "Addome/Vita": "Addome cm",
-                    "Torace": "Torace in cm",
-                    "Braccio Dx": "Braccio Dx cm",
-                    "Coscia Dx": "Coscia Dx cm"
-                }
+                for record in history:
+                    val = 0
+                    # Cerca la chiave giusta (perché a volte i nomi cambiano tra i form)
+                    for k in keys:
+                        if k in record:
+                            val = clean_value(record[k])
+                            break
+                    if val > 0:
+                        dates.append(record['DATE_OBJ'])
+                        values.append(val)
                 
-                # Griglia dei grafici
-                col_idx = 0
-                cols = st.columns(3)
-                
-                for label, key in metrics_to_plot.items():
-                    # Prepara dati per il grafico
-                    dates = [h['DateObj'] for h in history if key in h]
-                    values = []
-                    for h in history:
-                        val = str(h.get(key, 0)).replace(',', '.').replace('kg','').replace('cm','')
-                        try: values.append(float(val))
-                        except: values.append(0)
+                if len(values) > 1:
+                    curr = values[-1]
+                    prev = values[-2]
+                    start = values[0]
                     
-                    if len(values) > 1:
-                        curr = values[-1]
-                        prev = values[-2]
-                        start = values[0]
-                        
-                        d_prev, d_start = calculate_deltas(curr, prev, start)
-                        
-                        with cols[col_idx % 3]:
-                            st.markdown(f"#### {label}")
-                            
-                            # Grafico
-                            fig, ax = plt.subplots(figsize=(4, 2))
-                            ax.plot(dates, values, marker='o', color='#E20613')
-                            ax.set_facecolor('#0e1117')
-                            fig.patch.set_facecolor('#0e1117')
-                            ax.tick_params(colors='white')
-                            ax.spines['bottom'].set_color('white')
-                            ax.spines['left'].set_color('white') 
-                            st.pyplot(fig)
-                            
-                            # KPI Delta
-                            kpi_col1, kpi_col2 = st.columns(2)
-                            kpi_col1.markdown(f"Vs Prec:<br><span style='color:{'#4ade80' if d_prev < 0 and 'Peso' in label or d_prev > 0 and 'Braccio' in label else '#f87171'}'>{d_prev:+.1f}</span>", unsafe_allow_html=True)
-                            kpi_col2.markdown(f"Vs Start:<br><span style='color:white'>{d_start:+.1f}</span>", unsafe_allow_html=True)
-                            st.markdown("---")
-                        
-                        col_idx += 1
-
-        with tab2:
-            st.subheader("🛠️ Creazione Programma")
-            
-            col_comment, col_plan = st.columns([1, 2])
-            
-            with col_comment:
-                st.markdown("### 💬 Commento Coach")
-                coach_comment = st.text_area("Scrivi qui il feedback per l'atleta:", height=200, placeholder="Ottimo lavoro sul controllo del peso, ma attenzione al recupero...")
-            
-            with col_plan:
-                st.markdown("### 🏋️ Scheda Allenamento")
-                st.info("Incolla qui la scheda nel formato testo (come da esempio). Il sistema la formatterà per l'atleta.")
-                training_plan_raw = st.text_area("Editor Scheda", height=600, placeholder="Sessione A\nSPINTE MANUBRI...\n...")
-            
-            if st.button("💾 SALVA E INVIA PROGRAMMA"):
-                if training_plan_raw:
-                    # Qui salveremmo su DB in un nuovo foglio "PROGRAMMI_ATTIVI"
-                    # Per ora simuliamo il salvataggio
-                    client = get_google_sheet_client()
-                    try:
-                        # Controlla/Crea foglio PROGRAMMI
-                        try: worksheet = client.open("AREA199_DB").worksheet("PROGRAMMI")
-                        except: worksheet = client.open("AREA199_DB").add_worksheet(title="PROGRAMMI", rows="1000", cols="5")
-                        
-                        # Timestamp, Email, Commento, SchedaRaw
-                        worksheet.append_row([
-                            str(datetime.datetime.now()),
-                            selected_email,
-                            coach_comment,
-                            training_plan_raw
-                        ])
-                        st.success("Programma salvato e inviato all'atleta!")
-                    except Exception as e:
-                        st.error(f"Errore Salvataggio: {e}")
-                else:
-                    st.error("Inserisci almeno la scheda tecnica.")
-
-        with tab3:
-            st.subheader("📋 Dati Completi Ultimo Form")
-            st.json(latest_data)
-
-# ==============================================================================
-# 4. INTERFACCIA ATLETA
-# ==============================================================================
-
-def athlete_dashboard():
-    st.sidebar.header("Login Atleta")
-    email_login = st.sidebar.text_input("Inserisci la tua email")
-    
-    if st.sidebar.button("Accedi"):
-        st.session_state['athlete_email'] = email_login
-
-    if 'athlete_email' in st.session_state:
-        email = st.session_state['athlete_email']
-        client = get_google_sheet_client()
-        
-        try:
-            sheet = client.open("AREA199_DB").worksheet("PROGRAMMI")
-            data = sheet.get_all_records()
-            df_progs = pd.DataFrame(data)
-            
-            # Cerca l'ultimo programma per questa email
-            # Assumendo colonne: Timestamp, Email, Commento, SchedaRaw
-            # Nota: Gspread get_all_records usa la prima riga come header. Assicurati che il foglio PROGRAMMI abbia header.
-            # Se è vuoto o appena creato, gestiamo l'errore.
-            
-            if not df_progs.empty:
-                # Filtra per email (colonna 2 -> indice 1 se dataframe, o nome colonna)
-                # Assumiamo intestazioni: Date, Email, Comment, Plan
-                user_progs = df_progs[df_progs['Email'].str.strip().str.lower() == email.strip().lower()]
-                
-                if not user_progs.empty:
-                    last_prog = user_progs.iloc[-1]
+                    delta_prev = curr - prev
+                    delta_start = curr - start
                     
-                    st.title(f"👋 Ciao Atleta!")
-                    st.markdown(f"**Programma del:** {last_prog['Date']}")
+                    # Colore Delta: Verde se scende (per peso/addome assumiamo dimagrimento come goal default, o neutro)
+                    # Qui uso logica semplice: mostro il segno
                     
-                    # 1. Commento del Coach
-                    if last_prog['Comment']:
-                        st.markdown("""
-                        <div style="background-color: #1f2937; padding: 20px; border-radius: 10px; border-left: 5px solid #E20613; margin-bottom: 30px;">
-                            <h3 style="margin-top:0">💬 Feedback dal Coach</h3>
-                            <p style="font-size: 1.1em; font-style: italic;">"{}"</p>
+                    with cols[idx % 3]:
+                        st.markdown(f"""
+                        <div class="metric-container">
+                            <h4 style="margin:0">{label}</h4>
+                            <h2 style="margin:0; color: white;">{curr}</h2>
+                            <div style="display:flex; justify-content:space-between; margin-top:10px;">
+                                <div>Vs Prec: <span style="color: {'#4ade80' if delta_prev < 0 else '#f87171'}">{delta_prev:+.1f}</span></div>
+                                <div>Vs Start: <span style="color: white">{delta_start:+.1f}</span></div>
+                            </div>
                         </div>
-                        """.format(last_prog['Comment']), unsafe_allow_html=True)
-                    
-                    # 2. Visualizzazione Scheda Formattata
-                    st.markdown("## 🏋️ Il Tuo Programma")
-                    
-                    parsed_plan = parse_training_plan(last_prog['Plan'])
-                    
-                    for item in parsed_plan:
-                        if item['type'] == 'session':
-                            st.markdown(f"### {item['content']}")
-                            st.markdown("---")
-                        elif item['type'] == 'exercise':
-                            st.markdown(f"**{item['content']}**")
-                        elif item['type'] == 'details':
-                            st.markdown(f"_{item['content']}_")
-                        elif item['type'] == 'note':
-                            st.caption(f"💡 {item['content']}")
-                        else:
-                            st.write(item['content'])
+                        """, unsafe_allow_html=True)
                         
-                        # Spaziatura
-                        if item['type'] == 'note':
-                            st.write("") 
-                            
-                else:
-                    st.info("Nessun programma attivo trovato. Attendi l'aggiornamento del coach.")
+                        # Mini Grafico Sparkline
+                        chart_data = pd.DataFrame({'Data': dates, 'Valore': values})
+                        st.line_chart(chart_data.set_index('Data'), height=150)
+                    
+                    idx += 1
+
+        # --- SEZIONE 2: INPUT PROGRAMMA ---
+        st.divider()
+        st.subheader("2. CREAZIONE PROGRAMMA")
+        
+        c_sx, c_dx = st.columns([1, 2])
+        
+        with c_sx:
+            st.markdown("#### 💬 Feedback per l'Atleta")
+            commento = st.text_area("Scrivi qui il commento sull'andamento:", height=300, 
+                                   placeholder="Esempio: Ottimo lavoro sul peso, abbiamo perso 2kg. Ora aumentiamo il volume sulle gambe...")
+        
+        with c_dx:
+            st.markdown("#### 📋 Incolla Scheda Allenamento")
+            st.caption("Copia e incolla il testo della scheda (Sessioni, Esercizi, Note). Il sistema lo formatterà in automatico.")
+            testo_scheda = st.text_area("Editor Scheda", height=600, 
+                                       placeholder="Sessione A\nPANCA PIANA\n3x10\nNota: Gomiti stretti...")
+            
+        # SALVATAGGIO SU TERZO FILE (AREA199_DB)
+        if st.button("💾 SALVA E INVIA PROGRAMMA"):
+            if not testo_scheda:
+                st.error("Devi inserire almeno la scheda!")
             else:
-                st.info("Database programmi vuoto.")
-                
-        except Exception as e:
-            st.error(f"Errore nel recupero della scheda: {e}")
+                try:
+                    # Apre il File DB -> Foglio SCHEDE_ATTIVE
+                    db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
+                    
+                    # Campi: Data, Email, Nome, Commento, Scheda_Raw
+                    row_data = [
+                        datetime.datetime.now().strftime("%Y-%m-%d"),
+                        sel_email,
+                        nome,
+                        commento,
+                        testo_scheda
+                    ]
+                    db.append_row(row_data)
+                    st.success(f"Scheda salvata correttamente per {nome}!")
+                except Exception as e:
+                    st.error(f"Errore Salvataggio su AREA199_DB: {e}")
 
 # ==============================================================================
-# 5. MAIN ROUTING
+# 3. LOGICA ATLETA
+# ==============================================================================
+
+def athlete_interface():
+    st.markdown("## 👋 AREA ATLETA")
+    email = st.text_input("Inserisci la tua email per accedere:")
+    
+    if st.button("ACCEDI"):
+        client = get_client()
+        try:
+            # 1. Recupera la Scheda da AREA199_DB
+            sh_schede = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
+            data_schede = sh_schede.get_all_records()
+            
+            # Filtra per email
+            my_plans = [x for x in data_schede if str(x.get('Email','')).strip().lower() == email.strip().lower()]
+            
+            if not my_plans:
+                st.warning("Nessuna scheda attiva trovata.")
+                return
+                
+            last_plan = my_plans[-1] # Prende l'ultima
+            
+            # --- VISUALIZZAZIONE ---
+            st.title(f"Programma del {last_plan['Data']}")
+            
+            # 1. Feedback Coach
+            if last_plan.get('Commento'):
+                st.info(f"💬 **Feedback del Coach:**\n\n{last_plan['Commento']}")
+            
+            st.divider()
+            
+            # 2. Scheda Formattata (Parsing del testo incollato)
+            raw_text = last_plan.get('Scheda_Raw', '')
+            parsed_data = parse_schedule_text(raw_text)
+            
+            for block in parsed_data:
+                if block['type'] == "SESSION":
+                    st.markdown(f"<div class='session-header'>{block['text']}</div>", unsafe_allow_html=True)
+                
+                elif block['type'] == "EXERCISE":
+                    st.markdown(f"<div class='exercise-title'>{block['text']}</div>", unsafe_allow_html=True)
+                
+                elif block['type'] == "SETS":
+                    st.markdown(f"**{block['text']}**")
+                    
+                elif block['type'] == "NOTE":
+                    st.markdown(f"<div class='exercise-note'>{block['text']}</div>", unsafe_allow_html=True)
+                
+                else:
+                    st.write(block['text'])
+            
+            st.success("Buon Allenamento! 🔥")
+            
+        except Exception as e:
+            st.error(f"Errore di accesso al database: {e}")
+
+# ==============================================================================
+# MAIN
 # ==============================================================================
 
 def main():
-    st.sidebar.image("https://via.placeholder.com/200x50/E20613/FFFFFF?text=AREA+199", use_container_width=True)
-    mode = st.sidebar.radio("Modalità Accesso", ["Coach", "Atleta"])
+    mode = st.sidebar.radio("MODALITÀ", ["Coach", "Atleta"])
     
     if mode == "Coach":
-        password = st.sidebar.text_input("Password Coach", type="password")
-        if password == "1234": # Password Coach Placeholder
-            coach_dashboard()
-        elif password:
-            st.sidebar.error("Password errata")
+        pwd = st.sidebar.text_input("Password", type="password")
+        if pwd == "PETRUZZI199":
+            coach_interface()
     else:
-        athlete_dashboard()
+        athlete_interface()
 
 if __name__ == "__main__":
     main()
