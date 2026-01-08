@@ -44,19 +44,17 @@ def get_client():
     return gspread.authorize(creds)
 
 def clean_json_response(text):
-    """
-    Pulisce la risposta dell'AI in modo aggressivo per trovare il JSON.
-    Cerca la prima { e l'ultima } ignorando markdown o testo extra.
-    """
+    """Pulisce la risposta dell'AI per estrarre solo il JSON."""
+    if not text: return "{}"
     try:
-        # Cerca indice della prima graffa aperta e dell'ultima chiusa
+        # Rimuove markdown code blocks
+        text = text.replace("```json", "").replace("```", "").strip()
+        # Cerca la prima { e l'ultima }
         start = text.find('{')
         end = text.rfind('}')
-        
         if start != -1 and end != -1:
-            # Estrae solo il blocco JSON valido
             return text[start:end+1]
-        return text # Se fallisce, ritorna originale sperando vada bene
+        return text
     except:
         return text
 
@@ -141,16 +139,23 @@ def render_preview_card(plan_json):
     Renderizza la scheda in modo sicuro.
     """
     if not plan_json:
-        st.error("⚠️ ERRORE: Dati della scheda vuoti o non validi.")
+        st.error("⚠️ ERRORE: Nessun dato JSON ricevuto.")
         return
+
+    # Se per caso il JSON è una stringa (succede col DB), prova a riconvertirlo
+    if isinstance(plan_json, str):
+        try:
+            plan_json = json.loads(plan_json)
+        except:
+            st.error("⚠️ ERRORE: Il dato salvato non è un JSON valido.")
+            st.code(plan_json) # Mostra cosa c'è dentro
+            return
 
     # Gestione Maiuscole/Minuscole per la chiave 'sessions'
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     
     if not sessions:
-        st.warning("⚠️ Nessuna sessione trovata. Verifica il testo incollato.")
-        with st.expander("Vedi dati grezzi (Debug)"):
-            st.write(plan_json)
+        st.warning("⚠️ Scheda vuota o formato non riconosciuto.")
         return
 
     for session in sessions:
@@ -172,7 +177,7 @@ def render_preview_card(plan_json):
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
                     else:
-                        pass # Niente immagine
+                        pass 
                 
                 # Testo (Nome, Dettagli, Note)
                 with c2:
@@ -261,7 +266,6 @@ def coach_dashboard():
                 st.error("Incolla la scheda!")
             else:
                 with st.spinner("L'AI sta strutturando il programma..."):
-                    # PROMPT RINFORZATO
                     prompt = f"""
                     Agisci come un parser JSON rigoroso.
                     
@@ -299,7 +303,6 @@ def coach_dashboard():
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}])
                         
-                        # PULIZIA ESTREMA
                         clean_text = clean_json_response(res.choices[0].message.content)
                         plan_json = json.loads(clean_text)
                         
@@ -314,7 +317,7 @@ def coach_dashboard():
                         st.rerun() 
                     except json.JSONDecodeError as e:
                         st.error(f"L'AI ha generato un formato non valido. Riprova.")
-                        st.code(clean_text) # Mostra cosa ha sbagliato per debug
+                        st.code(clean_text)
                     except Exception as e: 
                         st.error(f"Errore AI Generico: {e}")
 
@@ -353,6 +356,7 @@ def athlete_dashboard():
         try:
             sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
             data = sh.get_all_records()
+            # Cerca email con tolleranza spazi e maiuscole
             my_plans = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
             
             if my_plans:
@@ -364,13 +368,21 @@ def athlete_dashboard():
                 
                 st.divider()
                 
+                # Parsing JSON sicuro
+                raw_json = last_plan.get('JSON_Scheda', '{}')
+                
+                # --- BLOCCO DEBUG NEL CASO DI ERRORE ---
                 try:
-                    plan_json = json.loads(last_plan.get('JSON_Scheda', '{}'))
+                    # Tenta il caricamento standard
+                    plan_json = json.loads(raw_json)
                     render_preview_card(plan_json)
                 except json.JSONDecodeError:
-                    st.error("Errore tecnico nel caricamento della scheda.")
+                    st.error("⚠️ ERRORE LETTURA DATI SCHEDA.")
+                    st.write("Il sistema non riesce a leggere i dati salvati. Ecco cosa c'è nella cella del Database:")
+                    st.code(raw_json) # MOSTRA IL CONTENUTO GREZZO PER CAPIRE L'ERRORE
                 except Exception as e:
-                    st.error(f"Errore visualizzazione: {e}")
+                    st.error(f"Errore generico visualizzazione: {e}")
+                    
             else:
                 st.warning("Nessuna scheda trovata per questa email.")
         except Exception as e:
