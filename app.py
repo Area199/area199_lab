@@ -4,6 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import re
+import ast  # <--- NUOVA LIBRERIA PER CORREGGERE GLI ERRORI DI LETTURA
 from datetime import datetime
 import openai
 import requests
@@ -24,18 +25,17 @@ st.markdown("""
     .stButton>button:hover { background: #E20613; color: white; }
     
     .metric-box { background: #161616; padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 3px solid #E20613; }
-    .exercise-card { background-color: #111; padding: 15px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #333; }
     .session-header { color: #E20613; font-size: 1.5em; font-weight: bold; margin-top: 30px; border-bottom: 1px solid #333; padding-bottom: 5px; }
     .exercise-name { font-size: 1.2em; font-weight: bold; color: white; }
     .exercise-details { color: #ccc; font-size: 1em; }
     .exercise-note { color: #888; font-style: italic; font-size: 0.9em; border-left: 2px solid #E20613; padding-left: 10px; margin-top: 5px; }
     
-    .debug-box { background: #333300; color: #ffff00; padding: 10px; border: 1px solid yellow; margin-bottom: 10px; }
+    .debug-text { color: orange; font-family: monospace; font-size: 0.8em; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. UTILITIES & MOTORE DATI
+# 1. MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
@@ -133,13 +133,19 @@ def find_exercise_images(name_query, db_exercises):
 # ==============================================================================
 
 def render_preview_card(plan_json):
-    if not plan_json: return False
-    if isinstance(plan_json, str):
-        try: plan_json = json.loads(plan_json)
-        except: return False
+    """
+    Renderizza la scheda gestendo errori e formati diversi.
+    """
+    if not plan_json:
+        st.error("⚠️ Dati vuoti.")
+        return
 
+    # Gestione Maiuscole/Minuscole
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
-    if not sessions: return False
+    
+    if not sessions:
+        st.warning("⚠️ Nessuna sessione trovata.")
+        return
 
     for session in sessions:
         s_name = session.get('name', session.get('Name', 'Sessione'))
@@ -164,7 +170,6 @@ def render_preview_card(plan_json):
                     if details: st.markdown(f"<div class='exercise-details'>{details}</div>", unsafe_allow_html=True)
                     if note: st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
             st.divider()
-    return True
 
 # ==============================================================================
 # 4. DASHBOARD COACH
@@ -288,9 +293,10 @@ def coach_dashboard():
                 try:
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                     full_name = f"{sel_email}" 
+                    
+                    # SALVATAGGIO SICURO
                     json_str = json.dumps(st.session_state['generated_plan'])
                     
-                    # SALVA NELLA COLONNA 'JSON_Completo' (o come quinta colonna)
                     db.append_row([
                         datetime.now().strftime("%Y-%m-%d"),
                         sel_email,
@@ -303,7 +309,7 @@ def coach_dashboard():
                 except Exception as e: st.error(f"Errore DB: {e}")
 
 # ==============================================================================
-# 5. DASHBOARD ATLETA
+# 5. DASHBOARD ATLETA (FIX ROBUSTO)
 # ==============================================================================
 
 def athlete_dashboard():
@@ -326,21 +332,28 @@ def athlete_dashboard():
                 
                 st.divider()
                 
-                # FIX: CERCA LA COLONNA CON IL NOME GIUSTO USATO NEL FOGLIO
+                # --- RECUPERO DATI ROBUSTO ---
+                # 1. Cerca la colonna giusta
                 raw_json = last_plan.get('JSON_Completo') or last_plan.get('JSON_Scheda') or last_plan.get('JSON')
                 
                 if not raw_json:
-                    st.error("⚠️ ERRORE: Dati della scheda non trovati.")
-                    st.write("Colonne trovate:", list(last_plan.keys())) # Debug
+                    st.error("⚠️ ERRORE: Campo dati vuoto nel Database.")
                 else:
+                    # 2. Tenta la decodifica in due modi (JSON standard o Python Dict)
                     try:
                         plan_json = json.loads(raw_json)
                         render_preview_card(plan_json)
                     except:
-                        st.error("Errore lettura scheda.")
-                        st.code(raw_json)
+                        try:
+                            # Tenta di riparare se è salvato come dizionario python (virgolette singole)
+                            import ast
+                            plan_json = ast.literal_eval(raw_json)
+                            render_preview_card(plan_json)
+                        except Exception as e:
+                            st.error("⚠️ FORMATO DATI NON VALIDO.")
+                            st.write("Contenuto grezzo:", raw_json)
             else:
-                st.warning("Nessuna scheda trovata.")
+                st.warning("Nessuna scheda trovata per questa email.")
         except Exception as e:
             st.error(f"Errore connessione: {e}")
 
