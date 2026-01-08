@@ -21,14 +21,14 @@ st.markdown("""
     h1, h2, h3, h4 { color: #E20613 !important; text-transform: uppercase; font-weight: 800; }
     .stButton>button { border: 2px solid #E20613; color: #E20613; font-weight: bold; text-transform: uppercase; width: 100%; }
     .stButton>button:hover { background: #E20613; color: white; }
+    .stExpander { border: 1px solid #333 !important; background-color: #050505 !important; }
     label { color: #888 !important; font-size: 0.8rem; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE DATI (MAPPATURA INTEGRALE TALLY)
+# 1. MOTORE DATI (MAPPATURA TOTALE TALLY)
 # ==============================================================================
-
 @st.cache_resource
 def get_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -53,20 +53,17 @@ def get_val(row, keywords, is_num=False):
 
 def extract_data_mirror(row, tipo):
     d = {}
-    
-    # --- ANAGRAFICA ---
+    # --- ANAGRAFICA & BASE ---
     d['Nome'] = get_val(row, ['Nome'])
     d['Cognome'] = get_val(row, ['Cognome'])
     d['Email'] = get_val(row, ['E-mail', 'Email'])
+    d['CF'] = get_val(row, ['Codice Fiscale'])
+    d['Indirizzo'] = get_val(row, ['Indirizzo (per Fatturazione)'])
+    d['DataNascita'] = get_val(row, ['Data di Nascita'])
     
-    if tipo == "ANAMNESI":
-        d['CF'] = get_val(row, ['Codice Fiscale'])
-        d['Indirizzo'] = get_val(row, ['Indirizzo (per Fatturazione)'])
-        d['DataNascita'] = get_val(row, ['Data di Nascita'])
-        d['Altezza'] = get_val(row, ['Altezza in cm'], True)
-    
-    # --- MISURE FISICHE (COMUNI) ---
+    # --- BIOMETRIA (TUTTI I CAMPI TALLY) ---
     d['Peso'] = get_val(row, ['Peso Kg'], True)
+    d['Altezza'] = get_val(row, ['Altezza in cm'], True)
     d['Collo'] = get_val(row, ['Collo in cm'], True)
     d['Torace'] = get_val(row, ['Torace in cm'], True)
     d['Addome'] = get_val(row, ['Addome cm'], True)
@@ -81,38 +78,31 @@ def extract_data_mirror(row, tipo):
     d['PolpaccioDx'] = get_val(row, ['Polpaccio Dx cm'], True)
     d['Caviglia'] = get_val(row, ['Caviglia cm'], True)
 
-    # --- CLINICA & LIFESTYLE (SPECIFICI ANAMNESI) ---
-    if tipo == "ANAMNESI":
-        d['Farmaci'] = get_val(row, ['Assunzione Farmaci'])
-        d['Sport'] = get_val(row, ['Sport Praticato'])
-        d['Obiettivi'] = get_val(row, ['Obiettivi a Breve/Lungo'])
-        d['Disfunzioni'] = get_val(row, ['Disfunzioni Patomeccaniche'])
-        d['Overuse'] = get_val(row, ['Anamnesi Meccanopatica'])
-        d['Limitazioni'] = get_val(row, ['Compensi e Limitazioni'])
-        d['Allergie'] = get_val(row, ['Allergie e Intolleranze'])
-        d['Esclusioni'] = get_val(row, ['Esclusioni alimentari'])
-        d['Integrazione'] = get_val(row, ['Integrazione attuale'])
+    # --- CLINICA, SPORT & LOGISTICA ---
+    d['Farmaci'] = get_val(row, ['Assunzione Farmaci'])
+    d['Sport'] = get_val(row, ['Sport Praticato'])
+    d['Obiettivi'] = get_val(row, ['Obiettivi a Breve/Lungo'])
+    d['Minuti'] = get_val(row, ['Minuti medi per sessione'], True)
+    d['FasceOrarie'] = get_val(row, ['Fasce orarie e limitazioni'])
+    d['Disfunzioni'] = get_val(row, ['Disfunzioni Patomeccaniche'])
+    d['Overuse'] = get_val(row, ['Anamnesi Meccanopatica'])
+    d['Limitazioni'] = get_val(row, ['Compensi e Limitazioni'])
+    d['Allergie'] = get_val(row, ['Allergie e Intolleranze'])
+    d['Esclusioni'] = get_val(row, ['Esclusioni alimentari'])
+    d['Integrazione'] = get_val(row, ['Integrazione attuale'])
     
-    # --- MONITORAGGIO (SPECIFICI CHECK-UP) ---
+    # --- CAMPI SPECIFICI CHECK-UP ---
     if tipo == "CHECKUP":
         d['Aderenza'] = get_val(row, ['Aderenza al Piano'])
         d['Stress'] = get_val(row, ['Monitoraggio Stress e Recupero'])
         d['Forza'] = get_val(row, ['Note su forza e resistenza'])
         d['NuoviSintomi'] = get_val(row, ['Nuovi Sintomi'])
-        d['NoteGen'] = get_val(row, ['Inserire note relative a variabili aspecifiche'])
-
-    # --- LOGISTICA (COMUNE) ---
-    d['Minuti'] = get_val(row, ['Minuti medi per sessione'], True)
-    d['FasceOrarie'] = get_val(row, ['Fasce orarie e limitazioni'])
+        d['NoteGen'] = get_val(row, ['variabili aspecifiche'])
     
-    # Estrazione giorni (Logica robusta per checkbox multiple)
+    # --- GIORNI (LOGICA TALLY MULTI-CHOICE) ---
     days_found = []
-    days_list = ['Lunedi', 'Martedi', 'Mercoledi', 'Giovedi', 'Venerdi', 'Sabato', 'Domenica']
-    for k, v in row.items():
-        if "giorni disponibili" in k.lower():
-            for day in days_list:
-                if day.lower() in str(v).lower():
-                    days_found.append(day)
+    for day in ['Lunedi', 'Martedi', 'Mercoledi', 'Giovedi', 'Venerdi', 'Sabato', 'Domenica']:
+        if day.lower() in str(row).lower(): days_found.append(day)
     d['Giorni'] = ", ".join(list(set(days_found)))
 
     return d
@@ -134,12 +124,11 @@ def find_exercise_images(name_query, db_exercises):
     if match and match[1] > 60:
         target_name = match[0]
         for ex in db_exercises:
-            if ex['name'] == target_name:
-                return [BASE_URL + img for img in ex.get('images', [])]
+            if ex['name'] == target_name: return [BASE_URL + img for img in ex.get('images', [])]
     return []
 
 # ==============================================================================
-# 3. INTERFACCIA COACH ADMIN
+# 3. INTERFACCIA COACH & ANTEPRIMA
 # ==============================================================================
 
 def main():
@@ -151,144 +140,147 @@ def main():
     if role == "Coach Admin" and pwd == "PETRUZZI199":
         client = get_client()
         inbox = []
-        
-        # Recupero da fogli Google
         try:
             sh1 = client.open("BIO ENTRY ANAMNESI").sheet1
             for r in sh1.get_all_records(): 
-                inbox.append({"label": f"🆕 {r.get('Nome','')} {r.get('Cognome','')} (Anamnesi)", "data": extract_data_mirror(r, "ANAMNESI")})
-            
+                inbox.append({"label": f"🆕 {r.get('Nome','')} {r.get('Cognome','')} (Anamnesi)", "type": "ANAMNESI", "row": r})
             sh2 = client.open("BIO CHECK-UP").sheet1
             for r in sh2.get_all_records(): 
-                inbox.append({"label": f"🔄 {r.get('Nome','')} (Check)", "data": extract_data_mirror(r, "CHECKUP")})
-        except Exception as e:
-            st.sidebar.error(f"Errore caricamento fogli: {e}")
+                inbox.append({"label": f"🔄 {r.get('Nome','')} (Check)", "type": "CHECKUP", "row": r})
+        except: pass
         
-        sel = st.selectbox("SELEZIONA CLIENTE", ["-"] + [x['label'] for x in inbox])
+        sel_label = st.selectbox("SELEZIONA CLIENTE", ["-"] + [x['label'] for x in inbox])
         
-        if sel != "-":
-            d = next(x['data'] for x in inbox if x['label'] == sel)
-            st.session_state['d'] = d
-            
-            st.markdown(f"### 👤 {d['Nome']} {d['Cognome']}")
-            
-            with st.expander("1. DATI ANAGRAFICI & LOGISTICA", expanded=False):
-                col1, col2 = st.columns(2)
-                d['Email'] = col1.text_input("Email", value=d['Email'])
-                d['Giorni'] = col2.text_input("Giorni Disponibili", value=d['Giorni'])
-                d['Minuti'] = col1.number_input("Minuti Sessione", value=d['Minuti'])
-                d['FasceOrarie'] = col2.text_area("Fasce Orarie", value=d['FasceOrarie'])
+        if sel_label != "-":
+            # Reset plan if client changes
+            if st.session_state.get('last_sel') != sel_label:
+                st.session_state['last_sel'] = sel_label
+                selected_item = next(x for x in inbox if x['label'] == sel_label)
+                st.session_state['d'] = extract_data_mirror(selected_item['row'], selected_item['type'])
+                if 'active_plan' in st.session_state: del st.session_state['active_plan']
 
-            with st.expander("2. CIRCONFERENZE & BIOMETRIA", expanded=True):
-                c1, c2, c3, c4 = st.columns(4)
-                d['Peso'] = c1.number_input("Peso (kg)", value=d['Peso'])
-                d['Addome'] = c2.number_input("Addome (cm)", value=d['Addome'])
-                d['Torace'] = c3.number_input("Torace (cm)", value=d['Torace'])
-                d['Fianchi'] = c4.number_input("Fianchi (cm)", value=d['Fianchi'])
+            d = st.session_state['d']
+            st.title(f"👤 {d['Nome']} {d['Cognome']}")
+
+            # --- PANNELLO DATI INTEGRALE ---
+            with st.expander("1. ANAGRAFICA & LOGISTICA", expanded=False):
+                c1, c2, c3 = st.columns(3)
+                d['Email'] = c1.text_input("E-mail", d['Email'])
+                d['CF'] = c2.text_input("Codice Fiscale", d.get('CF',''))
+                d['DataNascita'] = c3.text_input("Data di Nascita", d.get('DataNascita',''))
+                d['Giorni'] = st.text_input("Giorni Disponibili", d['Giorni'])
+                l1, l2 = st.columns(2)
+                d['Minuti'] = l1.number_input("Minuti/Sessione", value=d['Minuti'])
+                d['FasceOrarie'] = l2.text_area("Vincoli Orari", d['FasceOrarie'])
+
+            with st.expander("2. BIOMETRIA & CIRCONFERENZE", expanded=True):
+                st.markdown("#### Tronco & Base")
+                b1, b2, b3, b4, b5 = st.columns(5)
+                d['Peso'] = b1.number_input("Peso (Kg)", value=d['Peso'])
+                d['Addome'] = b2.number_input("Addome (cm)", value=d['Addome'])
+                d['Torace'] = b3.number_input("Torace (cm)", value=d['Torace'])
+                d['Collo'] = b4.number_input("Collo (cm)", value=d['Collo'])
+                d['Fianchi'] = b5.number_input("Fianchi (cm)", value=d['Fianchi'])
                 
-                st.write("**Arti Superiori**")
+                st.markdown("#### Arti Superiori")
                 s1, s2, s3, s4 = st.columns(4)
                 d['BraccioSx'] = s1.number_input("Braccio SX", value=d['BraccioSx'])
                 d['BraccioDx'] = s2.number_input("Braccio DX", value=d['BraccioDx'])
                 d['AvambraccioSx'] = s3.number_input("Avambr. SX", value=d['AvambraccioSx'])
                 d['AvambraccioDx'] = s4.number_input("Avambr. DX", value=d['AvambraccioDx'])
                 
-                st.write("**Arti Inferiori**")
-                i1, i2, i3, i4 = st.columns(4)
+                st.markdown("#### Arti Inferiori")
+                i1, i2, i3, i4, i5 = st.columns(5)
                 d['CosciaSx'] = i1.number_input("Coscia SX", value=d['CosciaSx'])
                 d['CosciaDx'] = i2.number_input("Coscia DX", value=d['CosciaDx'])
                 d['PolpaccioSx'] = i3.number_input("Polpaccio SX", value=d['PolpaccioSx'])
                 d['PolpaccioDx'] = i4.number_input("Polpaccio DX", value=d['PolpaccioDx'])
+                d['Caviglia'] = i5.number_input("Caviglia", value=d['Caviglia'])
 
-            with st.expander("3. ANALISI CLINICA E MONITORAGGIO", expanded=True):
-                if 'Aderenza' in d: # Se è un Check-up
-                    st.warning("⚠️ DATI MONITORAGGIO SETTIMANALE")
+            with st.expander("3. ANALISI CLINICA & MONITORAGGIO", expanded=True):
+                cl1, cl2 = st.columns(2)
+                d['Farmaci'] = cl1.text_area("Farmaci & Posologia", d.get('Farmaci',''))
+                d['Overuse'] = cl1.text_area("Anamnesi Meccanopatica", d.get('Overuse',''))
+                d['Disfunzioni'] = cl2.text_area("Disfunzioni Note", d.get('Disfunzioni',''))
+                d['Limitazioni'] = cl2.text_area("Compensi/Limitazioni", d.get('Limitazioni',''))
+                
+                if 'Aderenza' in d: # Sezione specifica Check-up
+                    st.error("📉 DATI DAL FORM DI CONTROLLO")
                     f1, f2 = st.columns(2)
-                    d['Aderenza'] = f1.text_input("Aderenza Piano", value=d['Aderenza'])
-                    d['Stress'] = f2.text_input("Stress/Recupero", value=d['Stress'])
-                    d['Forza'] = st.text_area("Note Forza/Resistenza", value=d['Forza'])
-                    d['NuoviSintomi'] = st.text_area("Nuovi Sintomi/Dolori", value=d['NuoviSintomi'])
-                    d['NoteGen'] = st.text_area("Variabili Aspecifiche", value=d['NoteGen'])
-                else: # Se è un'Anamnesi
-                    st.info("📑 DATI ANAMNESI INIZIALE")
-                    d['Farmaci'] = st.text_area("Farmaci", value=d.get('Farmaci',''))
-                    d['Overuse'] = st.text_area("Overuse/Infortuni", value=d.get('Overuse',''))
-                    d['Disfunzioni'] = st.text_area("Disfunzioni Meccaniche", value=d.get('Disfunzioni',''))
-                    d['Integrazione'] = st.text_area("Integrazione", value=d.get('Integrazione',''))
+                    d['Aderenza'] = f1.text_input("Aderenza Piano", d['Aderenza'])
+                    d['Stress'] = f2.text_input("Stress/Recupero (RPEs)", d['Stress'])
+                    d['Forza'] = st.text_area("Note Forza/Stalli", d['Forza'])
+                    d['NuoviSintomi'] = st.text_area("Nuovi Sintomi", d['NuoviSintomi'])
+                    d['NoteGen'] = st.text_area("Variabili Aspecifiche", d['NoteGen'])
 
             st.divider()
-            intensita = st.selectbox("FOCUS SESSIONE", ["Standard", "RIR/RPE", "Alta Intensità"])
+            intensita = st.selectbox("FOCUS TECNICO", ["Standard", "RIR/RPE", "Alta Intensità (HD/VBT)"])
 
-            if st.button("🚀 GENERA PROTOCOLLO AREA 199"):
-                with st.spinner("Il Consigliere sta elaborando..."):
+            if st.button("🚀 GENERA E MOSTRA ANTEPRIMA"):
+                with st.spinner("Il Consigliere sta applicando la scienza..."):
                     system_logic = f"""
-                    Sei il Dott. Antonio Petruzzi di AREA199. Esperto cinico, onesto e ultra-competente.
-                    DATI ATLETA: {json.dumps(d, indent=2)}
-                    
-                    CRITERI DI ANALISI:
-                    1. Se farmaci (es. Isotretinoina) -> STOP cedimento, max RPE 7.
-                    2. Se Addome > 94cm (M) o > 80cm (F) -> Priorità metabolica/insulinica.
-                    3. Se discopatie/infortuni in 'Overuse' -> NO carico assiale.
-                    4. Se Check-up: analizza 'Aderenza' e 'Nuovi Sintomi' per aggiustare il tiro.
+                    Sei il Dott. Antonio Petruzzi. Applica rigore biomeccanico.
+                    DATI: {json.dumps(d)}
+                    REGOLE: 
+                    1. Se farmaci (Isotretinoina/Cortisone) -> RPE max 7, NO cedimento.
+                    2. Se Addome > 94cm(M)/80cm(F) -> Alta densità, ripristino insulinico.
+                    3. Se discopatie/Overuse -> NO carico assiale.
                     """
+                    user_req = f"Crea scheda JSON per {d['Giorni']}, {d['Minuti']}min. Intensità {intensita}."
                     
-                    user_req = f"Genera scheda JSON per {d['Giorni']}, {d['Minuti']} min. Intensità {intensita}. Focus: biomeccanica d'élite."
-
                     try:
                         ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = ai.chat.completions.create(
-                            model="gpt-4o",
-                            messages=[{"role":"system","content":system_logic}, {"role":"user","content":user_req}],
+                            model="gpt-4o", messages=[{"role":"system","content":system_logic}, {"role":"user","content":user_req}],
                             response_format={"type":"json_object"}
                         )
                         plan = json.loads(res.choices[0].message.content)
-                        
-                        # Arricchimento immagini
                         for day, exs in plan.get('tabella', {}).items():
-                            for ex in exs:
-                                ex['images'] = find_exercise_images(ex['ex'], ex_db)[:2]
-                        
+                            for ex in exs: ex['images'] = find_exercise_images(ex['ex'], ex_db)[:2]
                         st.session_state['active_plan'] = plan
-                    except Exception as e:
-                        st.error(f"Errore AI: {e}")
+                    except Exception as e: st.error(f"Errore AI: {e}")
 
+            # --- AREA ANTEPRIMA (VISIBILE PRIMA DI SALVARE) ---
             if 'active_plan' in st.session_state:
+                st.markdown("---")
+                st.subheader("📋 ANTEPRIMA PROTOCOLLO GENERATO")
                 p = st.session_state['active_plan']
-                st.header(p.get('focus'))
-                st.info(p.get('analisi'))
-                for day, exs in p.get('tabella', {}).items():
-                    with st.expander(day, expanded=True):
-                        for ex in exs:
-                            col1, col2 = st.columns([1,2])
-                            if ex.get('images'): col1.image(ex['images'][0], width=150)
-                            col2.write(f"**{ex['ex']}** | {ex['sets']}x{ex['reps']} | {ex['rest']}")
-                            col2.caption(ex.get('note'))
                 
-                if st.button("💾 ARCHIVIA SCHEDA"):
+                st.warning(f"**FOCUS:** {p.get('focus', 'N/D')}")
+                st.info(f"**ANALISI TECNICA:** {p.get('analisi', 'N/D')}")
+                
+                for day, exs in p.get('tabella', {}).items():
+                    with st.container():
+                        st.markdown(f"### {day}")
+                        for ex in exs:
+                            col1, col2 = st.columns([1,3])
+                            if ex.get('images'): col1.image(ex['images'][0], width=180)
+                            col2.write(f"**{ex['ex']}** | {ex['sets']}x{ex['reps']} | Rec: {ex['rest']}")
+                            col2.caption(f"📝 {ex.get('note','')}")
+                        st.markdown("---")
+
+                if st.button("💾 CONFERMA E SALVA NEL DATABASE"):
                     try:
                         sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                         sh.append_row([datetime.now().strftime("%Y-%m-%d"), d['Email'], f"{d['Nome']} {d['Cognome']}", json.dumps(p)])
-                        st.success("Archiviato con successo.")
-                    except Exception as e: st.error(f"Errore DB: {e}")
+                        st.success("✅ Scheda salvata! L'atleta potrà ora visualizzarla.")
+                    except Exception as e: st.error(f"Errore Salvataggio: {e}")
 
-    # --- LOGICA ATLETA ---
+    # --- ATLETA ---
     elif role == "Atleta" and pwd == "AREA199":
-        st.title("Accesso Atleta AREA 199")
         email = st.text_input("Tua Email")
-        if st.button("VEDI PROTOCOLLO"):
+        if st.button("VEDI SCHEDA"):
             try:
                 sh = get_client().open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                records = sh.get_all_records()
-                my_plan = next(x for x in reversed(records) if x['Email'].lower() == email.lower())
+                data = sh.get_all_records()
+                my_plan = [x for x in data if x['Email'].strip().lower() == email.strip().lower()][-1]
                 p = json.loads(my_plan['JSON_Completo'])
                 st.header(p['focus'])
                 st.info(p['analisi'])
                 for day, exs in p['tabella'].items():
-                    with st.expander(day):
-                        for ex in exs:
-                            st.write(f"🏋️ **{ex['ex']}** | {ex['sets']}x{ex['reps']} | {ex['rest']}")
-                            st.caption(ex.get('note'))
-            except: st.warning("Nessuna scheda trovata per questa email.")
+                    with st.expander(day, expanded=True):
+                        for ex in exs: st.write(f"• **{ex['ex']}**: {ex['sets']}x{ex['reps']} - {ex['note']}")
+            except: st.warning("Nessuna scheda trovata.")
 
 if __name__ == "__main__":
     main()
