@@ -277,17 +277,6 @@ if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
         }}
         """
         
-        try:
-            client_ai = openai.Client(api_key=st.secrets["openai_key"])
-            res = client_ai.chat.completions.create(
-                model="gpt-4o", 
-                messages=[
-                    {"role": "system", "content": system_logic},
-                    {"role": "user", "content": prompt_istruzioni}
-                ], 
-                response_format={"type": "json_object"}
-            )
-            # ... resto del codice identico
 
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
@@ -390,5 +379,6 @@ if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
 
 if __name__ == "__main__":
     main()
+
 
 
