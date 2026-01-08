@@ -29,6 +29,9 @@ st.markdown("""
     .exercise-name { font-size: 1.2em; font-weight: bold; color: white; }
     .exercise-details { color: #ccc; font-size: 1em; }
     .exercise-note { color: #888; font-style: italic; font-size: 0.9em; border-left: 2px solid #E20613; padding-left: 10px; margin-top: 5px; }
+    
+    /* Debug style */
+    .debug-box { background: #333300; color: #ffff00; padding: 10px; border: 1px solid yellow; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -47,9 +50,7 @@ def clean_json_response(text):
     """Pulisce la risposta dell'AI per estrarre solo il JSON."""
     if not text: return "{}"
     try:
-        # Rimuove markdown code blocks
         text = text.replace("```json", "").replace("```", "").strip()
-        # Cerca la prima { e l'ultima }
         start = text.find('{')
         end = text.rfind('}')
         if start != -1 and end != -1:
@@ -139,24 +140,19 @@ def render_preview_card(plan_json):
     Renderizza la scheda in modo sicuro.
     """
     if not plan_json:
-        st.error("⚠️ ERRORE: Nessun dato JSON ricevuto.")
-        return
+        # Qui non stampiamo errore rosso, gestiamo silenziosamente o con warning fuori
+        return False
 
     # Se per caso il JSON è una stringa (succede col DB), prova a riconvertirlo
     if isinstance(plan_json, str):
-        try:
-            plan_json = json.loads(plan_json)
-        except:
-            st.error("⚠️ ERRORE: Il dato salvato non è un JSON valido.")
-            st.code(plan_json) # Mostra cosa c'è dentro
-            return
+        try: plan_json = json.loads(plan_json)
+        except: return False
 
     # Gestione Maiuscole/Minuscole per la chiave 'sessions'
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     
     if not sessions:
-        st.warning("⚠️ Scheda vuota o formato non riconosciuto.")
-        return
+        return False
 
     for session in sessions:
         # Nome Sessione
@@ -191,6 +187,7 @@ def render_preview_card(plan_json):
                     if note:
                         st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
             st.divider()
+    return True
 
 # ==============================================================================
 # 4. DASHBOARD COACH
@@ -332,12 +329,16 @@ def coach_dashboard():
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                     full_name = f"{sel_email}" 
                     
+                    # SALVA SU GOOGLE SHEET
+                    # IMPORTANTE: Convertiamo il JSON in stringa
+                    json_str = json.dumps(st.session_state['generated_plan'])
+                    
                     db.append_row([
                         datetime.now().strftime("%Y-%m-%d"),
                         sel_email,
                         full_name,
                         st.session_state['coach_comment'],
-                        json.dumps(st.session_state['generated_plan'])
+                        json_str # Colonna E: JSON_Scheda
                     ])
                     st.success("INVIATA!")
                     st.session_state['generated_plan'] = None
@@ -368,21 +369,32 @@ def athlete_dashboard():
                 
                 st.divider()
                 
-                # Parsing JSON sicuro
-                raw_json = last_plan.get('JSON_Scheda', '{}')
+                # --- TENTATIVO DI LETTURA E DEBUG ---
+                # Cerchiamo la colonna in vari modi perché a volte Google cambia i nomi o i case
+                raw_json = last_plan.get('JSON_Scheda') or last_plan.get('JSON') or last_plan.get('Scheda') or last_plan.get('Json_scheda')
                 
-                # --- BLOCCO DEBUG NEL CASO DI ERRORE ---
-                try:
-                    # Tenta il caricamento standard
-                    plan_json = json.loads(raw_json)
-                    render_preview_card(plan_json)
-                except json.JSONDecodeError:
-                    st.error("⚠️ ERRORE LETTURA DATI SCHEDA.")
-                    st.write("Il sistema non riesce a leggere i dati salvati. Ecco cosa c'è nella cella del Database:")
-                    st.code(raw_json) # MOSTRA IL CONTENUTO GREZZO PER CAPIRE L'ERRORE
-                except Exception as e:
-                    st.error(f"Errore generico visualizzazione: {e}")
-                    
+                if not raw_json:
+                    st.error("⚠️ ERRORE: Nessun dato JSON ricevuto.")
+                    st.markdown("""
+                    <div class="debug-box">
+                    <strong>DIAGNOSTICA:</strong><br>
+                    Il sistema ha letto la riga dal Database, ma non trova la colonna con la scheda.<br>
+                    Ecco le colonne che vedo nel file Google Sheet:<br>
+                    {}
+                    </div>
+                    """.format(list(last_plan.keys())), unsafe_allow_html=True)
+                else:
+                    try:
+                        plan_json = json.loads(raw_json)
+                        success = render_preview_card(plan_json)
+                        if not success:
+                            st.warning("I dati ci sono ma il formato non è corretto.")
+                            st.code(raw_json)
+                    except json.JSONDecodeError:
+                        st.error("⚠️ ERRORE: Dati corrotti nel Database.")
+                        st.code(raw_json)
+                    except Exception as e:
+                        st.error(f"Errore sconosciuto: {e}")
             else:
                 st.warning("Nessuna scheda trovata per questa email.")
         except Exception as e:
