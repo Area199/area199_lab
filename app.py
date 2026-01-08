@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from google.oauth2.service_account import Credentials # NUOVA LIBRERIA
+from google.oauth2.service_account import Credentials
 import json
 import re
 from datetime import datetime
@@ -33,28 +33,32 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE DATI (CONNESSIONE AGGIORNATA)
+# 1. UTILITIES & MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
 def get_client():
-    # NUOVO METODO DI AUTENTICAZIONE STABILE
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    # Usa le credenziali dai secrets
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
-def clean_json_response(response_text):
-    """Pulisce la risposta dell'AI se contiene markdown"""
-    if "```" in response_text:
-        match = re.search(r"```json(.*?)```", response_text, re.DOTALL)
-        if match: return match.group(1).strip()
-        return response_text.replace("```json", "").replace("```", "").strip()
-    return response_text.strip()
+def clean_json_response(text):
+    """
+    Pulisce la risposta dell'AI in modo aggressivo per trovare il JSON.
+    Cerca la prima { e l'ultima } ignorando markdown o testo extra.
+    """
+    try:
+        # Cerca indice della prima graffa aperta e dell'ultima chiusa
+        start = text.find('{')
+        end = text.rfind('}')
+        
+        if start != -1 and end != -1:
+            # Estrae solo il blocco JSON valido
+            return text[start:end+1]
+        return text # Se fallisce, ritorna originale sperando vada bene
+    except:
+        return text
 
 def clean_num(val):
     if not val: return 0.0
@@ -114,12 +118,12 @@ def get_full_history(email):
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
-    try: return requests.get("[https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json](https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json)").json()
+    try: return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return []
-    BASE_URL = "[https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/](https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/)"
+    BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
     if match and match[1] > 60:
@@ -133,38 +137,54 @@ def find_exercise_images(name_query, db_exercises):
 # ==============================================================================
 
 def render_preview_card(plan_json):
+    """
+    Renderizza la scheda in modo sicuro.
+    """
     if not plan_json:
-        st.error("⚠️ ERRORE: Dati della scheda vuoti.")
+        st.error("⚠️ ERRORE: Dati della scheda vuoti o non validi.")
         return
 
+    # Gestione Maiuscole/Minuscole per la chiave 'sessions'
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     
     if not sessions:
-        st.warning("⚠️ Nessuna sessione trovata.")
+        st.warning("⚠️ Nessuna sessione trovata. Verifica il testo incollato.")
+        with st.expander("Vedi dati grezzi (Debug)"):
+            st.write(plan_json)
         return
 
     for session in sessions:
+        # Nome Sessione
         s_name = session.get('name', session.get('Name', 'Sessione'))
         st.markdown(f"<div class='session-header'>{s_name}</div>", unsafe_allow_html=True)
         
+        # Esercizi
         exercises = session.get('exercises', session.get('Exercises', []))
         for ex in exercises:
             with st.container():
                 c1, c2 = st.columns([2, 3])
+                
+                # Immagini
                 with c1:
                     if ex.get('images'):
                         cols_img = st.columns(2)
                         cols_img[0].image(ex['images'][0], use_container_width=True)
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
+                    else:
+                        pass # Niente immagine
+                
+                # Testo (Nome, Dettagli, Note)
                 with c2:
                     name = ex.get('name', ex.get('Name', 'Esercizio'))
                     details = ex.get('details', ex.get('Details', ''))
                     note = ex.get('note', ex.get('Note', ''))
                     
                     st.markdown(f"<div class='exercise-name'>{name}</div>", unsafe_allow_html=True)
-                    if details: st.markdown(f"<div class='exercise-details'>{details}</div>", unsafe_allow_html=True)
-                    if note: st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
+                    if details:
+                        st.markdown(f"<div class='exercise-details'>{details}</div>", unsafe_allow_html=True)
+                    if note:
+                        st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
             st.divider()
 
 # ==============================================================================
@@ -241,32 +261,49 @@ def coach_dashboard():
                 st.error("Incolla la scheda!")
             else:
                 with st.spinner("L'AI sta strutturando il programma..."):
+                    # PROMPT RINFORZATO
                     prompt = f"""
-                    Analizza il seguente testo di allenamento e convertilo in un JSON rigoroso.
-                    TESTO:
-                    ---
+                    Agisci come un parser JSON rigoroso.
+                    
+                    INPUT UTENTE (Scheda Allenamento):
+                    ----------------------------------
                     {raw_input}
-                    ---
+                    ----------------------------------
                     
-                    ISTRUZIONI:
-                    1. Identifica le Sessioni (es. "Sessione A").
-                    2. Identifica gli Esercizi.
-                    3. Per ogni esercizio estrai:
-                       - "name": Nome in ITALIANO (come nel testo).
-                       - "search_name": Nome standard in INGLESE per cercare la foto (es. "Bench Press").
-                       - "details": Serie, Reps, Recupero (es. "3x12 | 60s").
-                       - "note": Eventuali note tecniche.
+                    COMPITO:
+                    Estrai la struttura della scheda e restituisci SOLO un oggetto JSON valido.
                     
-                    OUTPUT JSON SOLO (Niente testo prima o dopo):
-                    {{ "sessions": [ {{ "name": "...", "exercises": [ {{ "name": "...", "search_name": "...", "details": "...", "note": "..." }} ] }} ] }}
+                    SCHEMA JSON OBBLIGATORIO:
+                    {{
+                        "sessions": [
+                            {{
+                                "name": "Nome Sessione (es. Sessione A)",
+                                "exercises": [
+                                    {{
+                                        "name": "Nome in ITALIANO (es. Panca Piana)",
+                                        "search_name": "Nome in INGLESE per ricerca immagini (es. Barbell Bench Press)",
+                                        "details": "Serie x Reps (es. 4x8 | 120s)",
+                                        "note": "Note tecniche se presenti"
+                                    }}
+                                ]
+                            }}
+                        ]
+                    }}
+                    
+                    REGOLE:
+                    1. Non aggiungere testo prima o dopo il JSON.
+                    2. Se mancano dettagli, lascia stringa vuota "".
+                    3. Mantieni l'ordine esatto degli esercizi.
                     """
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}])
                         
+                        # PULIZIA ESTREMA
                         clean_text = clean_json_response(res.choices[0].message.content)
                         plan_json = json.loads(clean_text)
                         
+                        # Arricchimento Immagini
                         for s in plan_json.get('sessions', []):
                             for ex in s.get('exercises', []):
                                 query = ex.get('search_name', ex.get('name'))
@@ -276,7 +313,8 @@ def coach_dashboard():
                         st.session_state['coach_comment'] = comment_input
                         st.rerun() 
                     except json.JSONDecodeError as e:
-                        st.error(f"Errore formato JSON dall'AI: {e}")
+                        st.error(f"L'AI ha generato un formato non valido. Riprova.")
+                        st.code(clean_text) # Mostra cosa ha sbagliato per debug
                     except Exception as e: 
                         st.error(f"Errore AI Generico: {e}")
 
