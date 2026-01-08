@@ -122,36 +122,6 @@ def extract_data_mirror(row, tipo):
 
     return d
 # ==============================================================================
-# Crtiteri si realizzazione scheda
-# ==============================================================================
-prompt = f"""
-Sei il Dott. Antonio Petruzzi, direttore di AREA199. Il tuo obiettivo è l'eccellenza biomeccanica. 
-Non generare mai 'fuffa' da palestra commerciale. 
-
-DATI ATLETA: {json.dumps(d)}
-
-SEGUI QUESTA LOGICA DECISIONALE IN ORDINE DI PRIORITÀ:
-
-1. ANALISI DEI RISCHI (PRIORITÀ ASSOLUTA):
-- [span_4](start_span)Identifica farmaci (es. Isotretinoina, Cortisonici). Se presenti, limita RPE a max 7 e vieta il cedimento[span_4](end_span).
-- Identifica patologie (Discopatie, Lesioni). [span_5](start_span)Se presenti, elimina i vettori di carico che gravano su quelle zone (es. no carico assiale per discopatie lombo-sacrali)[span_5](end_span).
-
-2. OBIETTIVO METABOLICO:
-- Se Addome > 94cm (Uomo) o > 80cm (Donna), la priorità è il ripristino metabolico. [span_6](start_span)Usa densità elevata e recuperi incompleti[span_6](end_span).
-- Se il rapporto Peso/Altezza indica sottopeso, punta sulla tensione meccanica pura.
-
-3. SELEZIONE DEGLI ESERCIZI:
-- [span_7](start_span)[span_8](start_span)Evita esercizi che infiammano le zone indicate in 'Anamnesi Meccanopatica'[span_7](end_span)[span_8](end_span).
-- [span_9](start_span)Se ci sono asimmetrie (Braccio Sx < Dx), inserisci lavoro unilaterale per correggere il reclutamento neuromuscolare[span_9](end_span).
-
-4. VINCOLI TECNICI:
-- Adatta la scelta agli attrezzi disponibili. [span_10](start_span)[span_11](start_span)Se ha solo elastici, non inventare macchine isotoniche[span_10](end_span)[span_11](end_span).
-- Rispetta i giorni ({d['Giorni']}) e i minuti ({d['Minuti']}).
-
-OUTPUT:
-Restituisci un JSON con 'focus' (titolo tecnico), 'analisi' (spiegazione scientifica del perché hai fatto queste scelte) e 'tabella' con esercizi in inglese ma note in italiano.
-"""
-# ==============================================================================
 # 2. MOTORE IMMAGINI
 # ==============================================================================
 @st.cache_data
@@ -274,39 +244,51 @@ def main():
             
             intensita = st.selectbox("Intensità Allenamento", ["Standard", "RIR/RPE", "High Intensity (DropSets)"])
             
-            if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
-                with st.spinner("Elaborazione (Analisi e Commenti in ITALIANO)..."):
-                    
-                    prompt = f"""
-                    Sei Antonio Petruzzi. Crea scheda allenamento JSON in INGLESE.
-                    
-                    DATI ATLETA:
-                    {json.dumps(d, indent=2)}
-                    
-                    ISTRUZIONI LINGUA:
-                    - Usa nomi esercizi in INGLESE standard (es. "Barbell Bench Press") per il database immagini.
-                    - SCRIVI TUTTO IL RESTO (Analisi, Note, Focus, Consigli) IN ITALIANO.
-                    - USA UN TONO DIRETTO E CONFIDENZIALE: Dai del "TU" all'atleta (es. "Fai attenzione a...", "Il tuo obiettivo è...").
-                    
-                    VINCOLI TECNICI:
-                    1. Giorni: {d['Giorni']}.
-                    2. Durata: {d['Minuti']} min.
-                    3. Intensità: {intensita}.
-                    4. EVITA esercizi per: {d['Disfunzioni']} {d['Overuse']} {d['NuoviSintomi']}.
-                    5. NOTE EXTRA CLIENTE: {d.get('NoteGen', 'Nessuna')}.
-                    
-                    OUTPUT JSON:
-                    {{
-                        "focus": "Nome Mesociclo (ITA)",
-                        "analisi": "Analisi tecnica in ITALIANO...",
-                        "tabella": {{
-                            "Giorno 1": [
-                                {{"ex": "Barbell Bench Press", "sets": "4", "reps": "8", "rest": "120s", "note": "Gomiti stretti, controllo..."}}
-                            ]
-                        }}
-                    }}
-                    """
-                    
+            
+if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
+    with st.spinner("Elaborazione (Analisi e Commenti in ITALIANO)..."):
+        
+        # QUI COSTRUIAMO IL PROMPT CON LA TUA SCIENZA
+        system_logic = f"""
+        Sei il Dott. Antonio Petruzzi, direttore di AREA199. Eccellenza biomeccanica.
+        
+        DATI ATLETA:
+        {json.dumps(d, indent=2)}
+        
+        LOGICA DECISIONALE AREA199:
+        1. [span_0](start_span)ANALISI RISCHI: Se farmaci come Isotretinoina presenti -> RPE max 7, NO cedimento[span_0](end_span). [span_1](start_span)Se discopatie -> NO carico assiale[span_1](end_span).
+        2. [span_2](start_span)[span_3](start_span)METABOLISMO: Se Addome > 94cm (M) o > 80cm (F) -> Focus ripristino insulinico, alta densità, recuperi brevi[span_2](end_span)[span_3](end_span).
+        3. BIOMECCANICA: Evita esercizi critici per {d.get('Overuse','')} e {d.get('Disfunzioni','')}.
+        4. [span_4](start_span)ASIMMETRIE: Se presenti in braccia/gambe, usa lavoro unilaterale[span_4](end_span).
+        """
+
+        prompt_istruzioni = f"""
+        Crea scheda allenamento JSON.
+        - Lingua: Nomi esercizi in INGLESE (per database), Analisi e Note in ITALIANO.
+        - Tono: Diretto, dai del 'TU'.
+        - Vincoli: {d['Giorni']} giorni, {d['Minuti']} min, Intensità: {intensita}.
+        - Attrezzatura: Usa SOLO ciò che è coerente con lo sport ({d['Sport']}) e i dati logistici.
+        
+        OUTPUT JSON:
+        {{
+            "focus": "Titolo tecnico",
+            "analisi": "Spiegazione scientifica Petruzzi",
+            "tabella": {{ "Giorno 1": [ {{"ex": "Nome", "sets": "4", "reps": "8", "rest": "90s", "note": "..."}} ] }}
+        }}
+        """
+        
+        try:
+            client_ai = openai.Client(api_key=st.secrets["openai_key"])
+            res = client_ai.chat.completions.create(
+                model="gpt-4o", 
+                messages=[
+                    {"role": "system", "content": system_logic},
+                    {"role": "user", "content": prompt_istruzioni}
+                ], 
+                response_format={"type": "json_object"}
+            )
+            # ... resto del codice identico
+
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(
@@ -408,4 +390,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
