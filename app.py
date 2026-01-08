@@ -106,12 +106,10 @@ def get_full_history(email):
                 history.append(entry)
     except: pass
 
-    # Ordina per data (assumendo formato Tally standard dd/mm/yyyy ...)
-    # Fallback semplice: ordine di inserimento se la data fallisce
     return history
 
 # ==============================================================================
-# 2. MOTORE IMMAGINI (FACOLTATIVO MA BELLO)
+# 2. MOTORE IMMAGINI
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -160,9 +158,9 @@ def coach_dashboard():
             st.info("🆕 PRIMA VISITA - Visualizzazione Base")
             # Mostra i dati dell'ultima (unica) visita
             cols = st.columns(4)
-            for i, (k, v) in enumerate(last.items()):
-                if isinstance(v, (int, float)) and v > 0:
-                    cols[i % 4].metric(k, f"{v}")
+            metrics_keys = [k for k, v in last.items() if isinstance(v, (int, float)) and v > 0]
+            for i, k in enumerate(metrics_keys):
+                cols[i % 4].metric(k, f"{last[k]}")
         else:
             st.success(f"📈 VISITA DI CONTROLLO ({len(history)} record totali)")
             st.markdown("### Andamento Distretti Muscolari")
@@ -177,7 +175,7 @@ def coach_dashboard():
             for key in metrics_keys:
                 # Estrai valori per il grafico
                 vals = [h.get(key, 0) for h in history]
-                dates = [f"Visita {i+1}" for i in range(len(history))] # Semplificazione asse X
+                dates = [f"Visita {i+1}" for i in range(len(history))] 
                 
                 curr = vals[-1]
                 prev = vals[-2]
