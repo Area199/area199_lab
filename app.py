@@ -121,7 +121,36 @@ def extract_data_mirror(row, tipo):
         d['Aderenza'] = ""; d['Stress'] = ""; d['Forza'] = ""; d['NuoviSintomi'] = ""; d['NoteGen'] = ""
 
     return d
+# ==============================================================================
+# Crtiteri si realizzazione scheda
+# ==============================================================================
+prompt = f"""
+Sei il Dott. Antonio Petruzzi, direttore di AREA199. Il tuo obiettivo è l'eccellenza biomeccanica. 
+Non generare mai 'fuffa' da palestra commerciale. 
 
+DATI ATLETA: {json.dumps(d)}
+
+SEGUI QUESTA LOGICA DECISIONALE IN ORDINE DI PRIORITÀ:
+
+1. ANALISI DEI RISCHI (PRIORITÀ ASSOLUTA):
+- [span_4](start_span)Identifica farmaci (es. Isotretinoina, Cortisonici). Se presenti, limita RPE a max 7 e vieta il cedimento[span_4](end_span).
+- Identifica patologie (Discopatie, Lesioni). [span_5](start_span)Se presenti, elimina i vettori di carico che gravano su quelle zone (es. no carico assiale per discopatie lombo-sacrali)[span_5](end_span).
+
+2. OBIETTIVO METABOLICO:
+- Se Addome > 94cm (Uomo) o > 80cm (Donna), la priorità è il ripristino metabolico. [span_6](start_span)Usa densità elevata e recuperi incompleti[span_6](end_span).
+- Se il rapporto Peso/Altezza indica sottopeso, punta sulla tensione meccanica pura.
+
+3. SELEZIONE DEGLI ESERCIZI:
+- [span_7](start_span)[span_8](start_span)Evita esercizi che infiammano le zone indicate in 'Anamnesi Meccanopatica'[span_7](end_span)[span_8](end_span).
+- [span_9](start_span)Se ci sono asimmetrie (Braccio Sx < Dx), inserisci lavoro unilaterale per correggere il reclutamento neuromuscolare[span_9](end_span).
+
+4. VINCOLI TECNICI:
+- Adatta la scelta agli attrezzi disponibili. [span_10](start_span)[span_11](start_span)Se ha solo elastici, non inventare macchine isotoniche[span_10](end_span)[span_11](end_span).
+- Rispetta i giorni ({d['Giorni']}) e i minuti ({d['Minuti']}).
+
+OUTPUT:
+Restituisci un JSON con 'focus' (titolo tecnico), 'analisi' (spiegazione scientifica del perché hai fatto queste scelte) e 'tabella' con esercizi in inglese ma note in italiano.
+"""
 # ==============================================================================
 # 2. MOTORE IMMAGINI
 # ==============================================================================
@@ -379,3 +408,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
