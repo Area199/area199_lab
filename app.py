@@ -130,7 +130,6 @@ def find_exercise_images(name_query, db_exercises):
 # ==============================================================================
 # 3. INTERFACCIA COACH & ANTEPRIMA
 # ==============================================================================
-
 def main():
     st.sidebar.title("AREA 199 SYSTEM")
     role = st.sidebar.radio("ACCESSO", ["Coach Admin", "Atleta"])
@@ -141,9 +140,11 @@ def main():
         client = get_client()
         inbox = []
         try:
+            # [span_2](start_span)Recupero Anamnesi[span_2](end_span)
             sh1 = client.open("BIO ENTRY ANAMNESI").sheet1
             for r in sh1.get_all_records(): 
                 inbox.append({"label": f"🆕 {r.get('Nome','')} {r.get('Cognome','')} (Anamnesi)", "type": "ANAMNESI", "row": r})
+            # [span_3](start_span)Recupero Check-up[span_3](end_span)
             sh2 = client.open("BIO CHECK-UP").sheet1
             for r in sh2.get_all_records(): 
                 inbox.append({"label": f"🔄 {r.get('Nome','')} (Check)", "type": "CHECKUP", "row": r})
@@ -152,7 +153,7 @@ def main():
         sel_label = st.selectbox("SELEZIONA CLIENTE", ["-"] + [x['label'] for x in inbox])
         
         if sel_label != "-":
-            # Reset plan if client changes
+            # Gestione Session State per evitare N/D
             if st.session_state.get('last_sel') != sel_label:
                 st.session_state['last_sel'] = sel_label
                 selected_item = next(x for x in inbox if x['label'] == sel_label)
@@ -162,8 +163,8 @@ def main():
             d = st.session_state['d']
             st.title(f"👤 {d['Nome']} {d['Cognome']}")
 
-            # --- PANNELLO DATI INTEGRALE ---
-            with st.expander("1. ANAGRAFICA & LOGISTICA", expanded=False):
+            # --- 1. ANAGRAFICA & LOGISTICA ---
+            with st.expander("1. DATI ANAGRAFICI & LOGISTICA", expanded=False):
                 c1, c2, c3 = st.columns(3)
                 d['Email'] = c1.text_input("E-mail", d['Email'])
                 d['CF'] = c2.text_input("Codice Fiscale", d.get('CF',''))
@@ -171,23 +172,25 @@ def main():
                 d['Giorni'] = st.text_input("Giorni Disponibili", d['Giorni'])
                 l1, l2 = st.columns(2)
                 d['Minuti'] = l1.number_input("Minuti/Sessione", value=d['Minuti'])
-                d['FasceOrarie'] = l2.text_area("Vincoli Orari", d['FasceOrarie'])
+                d['FasceOrarie'] = l2.text_area("Vincoli Orari e Cronobiologia", d['FasceOrarie'])
 
+            # --- 2. BIOMETRIA COMPLETA (Tally Fields) ---
             with st.expander("2. BIOMETRIA & CIRCONFERENZE", expanded=True):
                 st.markdown("#### Tronco & Base")
                 b1, b2, b3, b4, b5 = st.columns(5)
                 d['Peso'] = b1.number_input("Peso (Kg)", value=d['Peso'])
-                d['Addome'] = b2.number_input("Addome (cm)", value=d['Addome'])
-                d['Torace'] = b3.number_input("Torace (cm)", value=d['Torace'])
-                d['Collo'] = b4.number_input("Collo (cm)", value=d['Collo'])
+                d['Altezza'] = b2.number_input("Altezza (cm)", value=d.get('Altezza', 0.0))
+                d['Addome'] = b3.number_input("Addome (cm)", value=d['Addome'])
+                d['Torace'] = b4.number_input("Torace (cm)", value=d['Torace'])
                 d['Fianchi'] = b5.number_input("Fianchi (cm)", value=d['Fianchi'])
                 
                 st.markdown("#### Arti Superiori")
-                s1, s2, s3, s4 = st.columns(4)
+                s1, s2, s3, s4, s5 = st.columns(5)
                 d['BraccioSx'] = s1.number_input("Braccio SX", value=d['BraccioSx'])
                 d['BraccioDx'] = s2.number_input("Braccio DX", value=d['BraccioDx'])
                 d['AvambraccioSx'] = s3.number_input("Avambr. SX", value=d['AvambraccioSx'])
                 d['AvambraccioDx'] = s4.number_input("Avambr. DX", value=d['AvambraccioDx'])
+                d['Collo'] = s5.number_input("Collo (cm)", value=d['Collo'])
                 
                 st.markdown("#### Arti Inferiori")
                 i1, i2, i3, i4, i5 = st.columns(5)
@@ -197,91 +200,63 @@ def main():
                 d['PolpaccioDx'] = i4.number_input("Polpaccio DX", value=d['PolpaccioDx'])
                 d['Caviglia'] = i5.number_input("Caviglia", value=d['Caviglia'])
 
-            with st.expander("3. ANALISI CLINICA & MONITORAGGIO", expanded=True):
-                cl1, cl2 = st.columns(2)
-                d['Farmaci'] = cl1.text_area("Farmaci & Posologia", d.get('Farmaci',''))
-                d['Overuse'] = cl1.text_area("Anamnesi Meccanopatica", d.get('Overuse',''))
-                d['Disfunzioni'] = cl2.text_area("Disfunzioni Note", d.get('Disfunzioni',''))
-                d['Limitazioni'] = cl2.text_area("Compensi/Limitazioni", d.get('Limitazioni',''))
-                
-                if 'Aderenza' in d: # Sezione specifica Check-up
+            # --- 3. CLINICA & MONITORAGGIO ---
+            with st.expander("3. ANALISI CLINICA E MONITORAGGIO", expanded=True):
+                if 'Aderenza' in d and d['Aderenza']: # Riconoscimento Check-up
                     st.error("📉 DATI DAL FORM DI CONTROLLO")
                     f1, f2 = st.columns(2)
-                    d['Aderenza'] = f1.text_input("Aderenza Piano", d['Aderenza'])
-                    d['Stress'] = f2.text_input("Stress/Recupero (RPEs)", d['Stress'])
-                    d['Forza'] = st.text_area("Note Forza/Stalli", d['Forza'])
-                    d['NuoviSintomi'] = st.text_area("Nuovi Sintomi", d['NuoviSintomi'])
-                    d['NoteGen'] = st.text_area("Variabili Aspecifiche", d['NoteGen'])
+                    d['Aderenza'] = f1.text_input("Aderenza Piano", value=d['Aderenza'])
+                    d['Stress'] = f2.text_input("Stress/Recupero (RPEs)", value=d['Stress'])
+                    d['Forza'] = st.text_area("Note Forza/Stalli", value=d['Forza'])
+                    d['NuoviSintomi'] = st.text_area("Nuovi Sintomi/Dolori", value=d['NuoviSintomi'])
+                    d['NoteGen'] = st.text_area("Variabili Aspecifiche", value=d['NoteGen'])
+                else: # Anamnesi Iniziale
+                    st.info("📑 DATI ANAMNESI INIZIALE")
+                    cl1, cl2 = st.columns(2)
+                    d['Farmaci'] = cl1.text_area("Farmaci & Posologia", d.get('Farmaci',''))
+                    d['Overuse'] = cl1.text_area("Anamnesi Meccanopatica", d.get('Overuse',''))
+                    d['Disfunzioni'] = cl2.text_area("Disfunzioni Patomeccaniche", d.get('Disfunzioni',''))
+                    d['Limitazioni'] = cl2.text_area("Compensi/Limitazioni", d.get('Limitazioni',''))
+                    d['Integrazione'] = st.text_area("Integrazione Attuale", d.get('Integrazione',''))
+                    d['Allergie'] = st.text_area("Allergie & Esclusioni", d.get('Allergie',''))
 
             st.divider()
             intensita = st.selectbox("FOCUS TECNICO", ["Standard", "RIR/RPE", "Alta Intensità (HD/VBT)"])
 
-                        if st.button("🚀 GENERA E MOSTRA ANTEPRIMA"):
+            # --- LOGICA DI GENERAZIONE ---
+            if st.button("🚀 GENERA E MOSTRA ANTEPRIMA"):
                 with st.spinner("Il Consigliere sta applicando la scienza AREA199..."):
-                    # Logica deterministica: costringiamo l'AI a usare le chiavi corrette
                     system_logic = f"""
-                    Sei il Dott. Antonio Petruzzi, direttore di AREA199. Sei un esperto biomeccanico ultra-competente.
-                    Non generare fuffa. Usa i dati per creare un protocollo d'élite.
-                    
-                    DATI INTEGRALI ATLETA (da Anamnesi/Check-up):
-                    {json.dumps(d, indent=2)}
-                    
-                    PROTOCOLLI MANDATORI:
-                    1. SICUREZZA FARMACI: Se in 'Farmaci' leggi Isotretinoina o simili -> RPE max 7, NO cedimento.
-                    2. RISCHIO METABOLICO: Se Addome > 94cm (Uomo) o > 80cm (Donna) -> Priorità densità e sensibilità insulinica.
-                    3. BIOMECCANICA: Se in 'Overuse' o 'Disfunzioni' ci sono discopatie/infortuni -> NO carico assiale (Squat/Stacchi bilanciere).
-                    4. RECUPERO: Se nel check-up lo 'Stress' è > 7 o 'Aderenza' è bassa, riduci il volume del 20%.
+                    Sei il Dott. Antonio Petruzzi, direttore di AREA199. Esperto biomeccanico.
+                    DATI ATLETA: {json.dumps(d, indent=2)}
+                    REGOLE: 
+                    1. Se farmaci (es. Isotretinoina) -> RPE max 7, NO cedimento.
+                    2. Se Addome > 94cm(M)/80cm(F) -> Protocollo densità metabolica.
+                    3. Se discopatie in Overuse/Disfunzioni -> NO carico assiale.
                     """
-                    
-                    user_req = f"""
-                    Crea un protocollo per {d['Giorni']} con sessioni da {d['Minuti']} min. Intensità: {intensita}.
-                    Restituisci ESCLUSIVAMENTE un oggetto JSON con queste chiavi esatte:
-                    {{
-                        "focus": "Titolo tecnico del mesociclo",
-                        "analisi": "Analisi biomeccanica dettagliata in italiano",
-                        "tabella": {{
-                            "Giorno 1": [
-                                {{"ex": "Nome Esercizio (ENG)", "sets": "4", "reps": "10", "rest": "90s", "note": "istruzioni ITA"}}
-                            ]
-                        }}
-                    }}
-                    """
+                    user_req = f"Crea protocollo JSON per {d['Giorni']}, {d['Minuti']} min. Modalità {intensita}."
                     
                     try:
                         ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = ai.chat.completions.create(
-                            model="gpt-4o", 
-                            messages=[
-                                {"role": "system", "content": system_logic},
-                                {"role": "user", "content": user_req}
-                            ],
-                            response_format={"type": "json_object"}
+                            model="gpt-4o", messages=[{"role":"system","content":system_logic}, {"role":"user","content":user_req}],
+                            response_format={"type":"json_object"}
                         )
                         plan = json.loads(res.choices[0].message.content)
-                        
-                        # Garantiamo che le chiavi per l'anteprima esistano sempre
                         st.session_state['active_plan'] = {
-                            "focus": plan.get('focus', 'Protocollo Personalizzato AREA199'),
-                            "analisi": plan.get('analisi', 'Analisi generata sulla base dei dati biometrici.'),
+                            "focus": plan.get('focus', 'Protocollo Personalizzato'),
+                            "analisi": plan.get('analisi', 'Analisi generata.'),
                             "tabella": plan.get('tabella', {})
                         }
-                        
-                        # Arricchimento immagini (Cerca nel DB degli esercizi)
                         for day, exs in st.session_state['active_plan']['tabella'].items():
-                            for ex in exs:
-                                imgs = find_exercise_images(ex['ex'], ex_db)
-                                ex['images'] = imgs[:2]
-                                
-                    except Exception as e:
-                        st.error(f"Errore tecnico nella generazione AI: {e}")
+                            for ex in exs: ex['images'] = find_exercise_images(ex['ex'], ex_db)[:2]
+                    except Exception as e: st.error(f"Errore AI: {e}")
 
-            # --- AREA ANTEPRIMA (VISIBILE PRIMA DI SALVARE) ---
+            # --- AREA ANTEPRIMA ---
             if 'active_plan' in st.session_state:
                 st.markdown("---")
                 st.subheader("📋 ANTEPRIMA PROTOCOLLO GENERATO")
                 p = st.session_state['active_plan']
-                
-                # Qui usiamo le chiavi corrette per eliminare l'errore N/D
                 st.warning(f"**FOCUS:** {p['focus']}")
                 st.info(f"**ANALISI TECNICA:** {p['analisi']}")
                 
@@ -290,62 +265,33 @@ def main():
                         st.markdown(f"### {day}")
                         for ex in exs:
                             col1, col2 = st.columns([1,3])
-                            with col1:
-                                if ex.get('images'):
-                                    st.image(ex['images'][0], width=180)
-                                else:
-                                    st.caption("📷 No img")
-                            with col2:
-                                st.write(f"**{ex.get('ex', 'Esercizio')}**")
-                                st.write(f"**{ex.get('sets','?')}** x **{ex.get('reps','?')}** | Rec: **{ex.get('rest','?')}**")
-                                if ex.get('note'): st.caption(f"📝 {ex['note']}")
+                            if ex.get('images'): col1.image(ex['images'][0], width=180)
+                            col2.write(f"**{ex.get('ex','Ex')}** | {ex.get('sets','?')}x{ex.get('reps','?')} | {ex.get('rest','?')}")
+                            if ex.get('note'): col2.caption(f"📝 {ex['note']}")
                         st.markdown("---")
 
                 if st.button("💾 CONFERMA E SALVA NEL DATABASE"):
                     try:
                         sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
-                        # Prepariamo la riga per il DB (Data, Email, Nome Completo, JSON)
-                        sh.append_row([
-                            datetime.now().strftime("%Y-%m-%d"), 
-                            d['Email'], 
-                            f"{d['Nome']} {d['Cognome']}", 
-                            json.dumps(p)
-                        ])
-                        st.success("✅ Protocollo archiviato con successo. L'atleta può ora visualizzarlo.")
-                    except Exception as e: 
-                        st.error(f"Errore nel salvataggio su Google Sheets: {e}")
+                        sh.append_row([datetime.now().strftime("%Y-%m-%d"), d['Email'], f"{d['Nome']} {d['Cognome']}", json.dumps(p)])
+                        st.success("✅ Scheda salvata con successo!")
+                    except Exception as e: st.error(f"Errore Salvataggio: {e}")
 
     # --- ACCESSO ATLETA ---
     elif role == "Atleta" and pwd == "AREA199":
-        st.title("🩸 AREA 199 | ATLETA")
         email = st.text_input("Inserisci la tua Email")
         if st.button("VEDI IL MIO PROTOCOLLO"):
             try:
                 sh = get_client().open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                 data = sh.get_all_records()
-                # Cerchiamo l'ultima scheda salvata per l'email dell'atleta
-                my_plan_row = [x for x in data if str(x.get('Email','')).strip().lower() == email.strip().lower()]
-                
-                if my_plan_row:
-                    last_plan = my_plan_row[-1]
-                    # Supportiamo sia la colonna 'JSON_Completo' che 'JSON'
-                    raw_json = last_plan.get('JSON_Completo') or last_plan.get('JSON')
-                    p = json.loads(raw_json)
-                    
-                    st.header(p.get('focus', 'Protocollo Allenamento'))
-                    st.info(p.get('analisi', 'Analisi tecnica non disponibile.'))
-                    
-                    for day, exs in p.get('tabella', {}).items():
-                        with st.expander(day, expanded=True):
-                            for ex in exs:
-                                st.write(f"🏋️ **{ex.get('ex')}**")
-                                st.write(f"**{ex.get('sets')}** x **{ex.get('reps')}** | Rest: **{ex.get('rest')}**")
-                                if ex.get('note'): st.caption(f"Note: {ex['note']}")
-                                st.divider()
-                else:
-                    st.warning("Nessun protocollo trovato per questa email. Contatta il Lab.")
-            except Exception as e:
-                st.error(f"Errore nel recupero della scheda: {e}")
+                my_plan = [x for x in data if x['Email'].strip().lower() == email.strip().lower()][-1]
+                p = json.loads(my_plan.get('JSON_Completo') or my_plan.get('JSON'))
+                st.header(p['focus'])
+                st.info(p['analisi'])
+                for day, exs in p['tabella'].items():
+                    with st.expander(day, expanded=True):
+                        for ex in exs: st.write(f"🏋️ **{ex.get('ex')}** | {ex.get('sets')}x{ex.get('reps')} - {ex.get('note','')}")
+            except: st.warning("Nessuna scheda trovata.")
 
 if __name__ == "__main__":
     main()
