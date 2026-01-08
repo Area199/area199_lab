@@ -276,8 +276,6 @@ if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
             "tabella": {{ "Giorno 1": [ {{"ex": "Nome", "sets": "4", "reps": "8", "rest": "90s", "note": "..."}} ] }}
         }}
         """
-        
-
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(
@@ -379,6 +377,7 @@ if st.button("🚀 GENERA SCHEDA (CON QUESTI DATI)"):
 
 if __name__ == "__main__":
     main()
+
 
 
 
