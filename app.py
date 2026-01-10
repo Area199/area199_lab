@@ -110,23 +110,27 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI - REVISIONE TECNICA AREA199
+# 2. MOTORE AI & IMMAGINI - FIX AREA199
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
-    try: return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
-    except: return []
+    try: 
+        # Caricamento database esterno
+        return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
+    except: 
+        return []
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     db_names = [x['name'] for x in db_exercises]
     
-    # FIX SINTASSI: fuzz.token_sort_ratio (non fuzz.fuzz)
-    # SOGLIA: 85 per distinguere Incline da Decline e Machine da Squat
+    # CORREZIONE: Uso di token_sort_ratio per ignorare l'ordine delle parole 
+    # ma pesare l'esattezza dei termini (Incline vs Decline).
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_sort_ratio)
     
-    if match and match[1] > 85:
+    # SOGLIA: 85 è il valore limite per non confondere esercizi simili.
+    if match and match[1] >= 85:
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
@@ -376,6 +380,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
