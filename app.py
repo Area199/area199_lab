@@ -35,7 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. UTILITIES & MOTORE DATI
+# 1. MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (CON DEBUG)
+# 2. MOTORE AI & IMMAGINI (BLINDATO)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -124,34 +124,63 @@ def load_exercise_db():
 
 def find_exercise_images(name_query, db_exercises):
     """
-    Ritorna una tupla: (lista_immagini, messaggio_debug)
+    Sistema di ricerca a cascata: Esatto -> Parole Chiave -> Fuzzy
     """
     if not db_exercises: return ([], "DB Vuoto")
     if not name_query: return ([], "Query Vuota")
     
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+    
+    # Normalizzazione Query (Tutto minuscolo, niente spazi extra)
+    q = name_query.lower().strip()
+    
+    # 1. MATCH ESATTO (Super veloce)
+    for ex in db_exercises:
+        if ex['name'].lower() == q:
+            imgs = [BASE_URL + img for img in ex.get('images', [])]
+            return (imgs, f"Match Esatto: {ex['name']}")
+
+    # 2. MATCH PAROLE CHIAVE (Molto potente per nomi lunghi)
+    # Esempio: Query "Incline Dumbbell Press" -> Cerca esercizio che ha "Incline" AND "Dumbbell" AND "Press"
+    q_words = set(q.split())
+    candidates = []
+    
+    for ex in db_exercises:
+        db_name_clean = ex['name'].lower()
+        db_words = set(db_name_clean.split())
+        
+        # Se tutte le parole della query sono nel nome del DB
+        if q_words.issubset(db_words):
+            candidates.append(ex)
+            
+    if candidates:
+        # Prende quello col nome più corto (probabilmente il più attinente)
+        # Es: "Leg Press" è meglio di "Single Leg Press" se cerco "Leg Press"
+        best_match = min(candidates, key=lambda x: len(x['name']))
+        imgs = [BASE_URL + img for img in best_match.get('images', [])]
+        return (imgs, f"Match Parole: {best_match['name']}")
+
+    # 3. FUZZY MATCH (Ultima spiaggia per errori di battitura)
     db_names = [x['name'] for x in db_exercises]
+    match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
     
-    # 1. Match Diretto
-    match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
-    
-    if match and match[1] > 50: # Soglia bassa
+    if match and match[1] > 60:
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 imgs = [BASE_URL + img for img in ex.get('images', [])]
-                return (imgs, f"Match: {match[0]} ({match[1]}%)")
-    
-    # 2. Fallback (Rimuove parole "inutili")
-    clean = name_query.lower().replace("cable", "").replace("machine", "").replace("dumbbell", "").replace("barbell", "").strip()
-    if clean and clean != name_query.lower():
-        match2 = process.extractOne(clean, db_names, scorer=fuzz.token_set_ratio)
-        if match2 and match2[1] > 50:
+                return (imgs, f"Fuzzy Match: {match[0]} ({match[1]}%)")
+
+    # 4. FALLBACK ESTREMO (Rimuove parole "rumorose")
+    q_clean = q.replace("cable", "").replace("machine", "").replace("dumbbell", "").replace("barbell", "").strip()
+    if q_clean and q_clean != q:
+        match2 = process.extractOne(q_clean, db_names, scorer=fuzz.token_set_ratio)
+        if match2 and match2[1] > 60:
             for ex in db_exercises:
                 if ex['name'] == match2[0]:
                     imgs = [BASE_URL + img for img in ex.get('images', [])]
-                    return (imgs, f"Fallback: {match2[0]} ({match2[1]}%)")
+                    return (imgs, f"Fallback Clean: {match2[0]}")
 
-    return ([], f"Nessun match per '{name_query}' (Best: {match[0] if match else 'None'} {match[1] if match else 0}%)")
+    return ([], f"Nessun risultato per '{name_query}'")
 
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
@@ -175,10 +204,12 @@ def render_preview_card(plan_json, show_debug=False):
         exercises = session.get('exercises', session.get('Exercises', []))
         for ex in exercises:
             with st.container():
-                # DEBUG VISIVO (Solo se richiesto, es. lato coach)
+                # DEBUG VISIVO
                 if show_debug:
                     debug_msg = ex.get('debug_info', 'N/A')
-                    st.markdown(f"<div class='debug-img'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
+                    # Colora di rosso se non trova, verde se trova
+                    color = "#ff4b4b" if "Nessun risultato" in debug_msg else "#4ade80"
+                    st.markdown(f"<div class='debug-img' style='color:{color}'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
 
                 c1, c2 = st.columns([2, 3])
                 
@@ -212,7 +243,7 @@ def coach_dashboard():
     ex_db = load_exercise_db()
     
     if not ex_db:
-        st.error("❌ ERRORE CRITICO: Il Database Immagini non risponde. Controlla la connessione internet.")
+        st.error("❌ ERRORE CRITICO: Il Database Immagini non risponde.")
     
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
@@ -289,7 +320,7 @@ def coach_dashboard():
                     
                     ISTRUZIONI SPECIALI:
                     1. Estrai il campo "SEARCH_NAME" se presente e usalo per il campo "search_name".
-                    2. Se "SEARCH_NAME" non c'è, crea tu un "search_name" in INGLESE GENERICO E SEMPLICE (Es: "Chest Press" invece di "Convergent Chest Press").
+                    2. Se "SEARCH_NAME" non c'è, crea tu un "search_name" in INGLESE GENERICO.
                     3. Il campo "name" deve essere quello originale ITALIANO.
                     
                     SCHEMA JSON:
@@ -334,7 +365,6 @@ def coach_dashboard():
             st.subheader("👁️ ANTEPRIMA")
             if st.session_state['coach_comment']: st.info(st.session_state['coach_comment'])
             
-            # Mostra la scheda con il DEBUG attivo (scritta gialla)
             render_preview_card(st.session_state['generated_plan'], show_debug=True)
             
             if st.button("✅ 2. INVIA AL CLIENTE", type="primary"):
@@ -386,7 +416,6 @@ def athlete_dashboard():
                 else:
                     try:
                         plan_json = json.loads(raw_json)
-                        # All'atleta NON mostriamo il debug
                         render_preview_card(plan_json, show_debug=False)
                     except:
                         try:
