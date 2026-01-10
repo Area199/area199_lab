@@ -262,15 +262,24 @@ def coach_dashboard():
             st.subheader("2. INCOLLA SCHEDA")
             raw_input = st.text_area("Testo grezzo", height=600, key="input_raw", placeholder="Sessione A\nPANCA...")
 
+       # Cerca questa parte nel tuo codice
         if st.button("🔄 1. GENERA ANTEPRIMA"):
             if not raw_input:
                 st.error("Incolla la scheda!")
             else:
                 with st.spinner("L'AI sta strutturando il programma..."):
+                    
+                    # --- INIZIO DEL NUOVO BLOCCO PROMPT (INCOLLA QUI) ---
                     prompt = f"""
-                    Agisci come un parser JSON rigoroso.
+                    Agisci come un parser JSON rigoroso per un software di High Performance.
+                    
                     INPUT UTENTE:
                     {raw_input}
+                    
+                    ISTRUZIONI FONDAMENTALI:
+                    1. MANTIENI I NOMI DEGLI ESERCIZI ESATTAMENTE COME SCRITTI NELL'INPUT.
+                    2. NON TRADURRE NULLA IN ITALIANO.
+                    3. Il campo "name" e "search_name" DEVONO ESSERE IDENTICI.
                     
                     SCHEMA JSON OBBLIGATORIO:
                     {{
@@ -279,17 +288,21 @@ def coach_dashboard():
                                 "name": "Nome Sessione",
                                 "exercises": [
                                     {{
-                                        "name": "Nome ITALIANO",
-                                        "search_name": "Nome INGLESE (per ricerca foto)",
-                                        "details": "Serie x Reps",
-                                        "note": "Note"
+                                        "name": "NOME ESERCIZIO ORIGINALE (NO TRADUZIONI)",
+                                        "search_name": "NOME ESERCIZIO ORIGINALE (NO TRADUZIONI)",
+                                        "details": "Serie x Reps / Rest / TUT",
+                                        "note": "Note tecniche e tutorial"
                                     }}
                                 ]
                             }}
                         ]
                     }}
-                    Rispondi SOLO con il JSON.
+                    Rispondi SOLO con il JSON valido.
                     """
+                    # --- FINE DEL NUOVO BLOCCO PROMPT ---
+
+                    # Qui sotto c'è il resto del tuo codice che chiama l'AI (OpenAI o altro)
+                    # response = ... (NON TOCCARE QUELLO CHE C'È DOPO)
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}])
@@ -396,6 +409,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
