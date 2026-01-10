@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI - DIZIONARIO UNIVERSALE AREA199
+# MOTORE DI RICERCA IMMAGINI AREA199 (LOGICA DIRETTA)
 # ==============================================================================
 import requests
 from rapidfuzz import process, fuzz
@@ -123,32 +123,29 @@ def load_exercise_db():
     except: 
         return []
 
-
 def find_exercise_images(name_query, db_exercises):
+    """
+    1. Cerca corrispondenza esatta (case-insensitive).
+    2. Se fallisce, cerca per similitudine (fuzzy) con soglia alta.
+    """
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     
-    # 1. CONTROLLO DIZIONARIO (MAPPING DIRETTO)
-    # Cerca se il nome che hai scritto esiste nel dizionario EXERCISE_MAP
-    target_name = EXERCISE_MAP.get(name_query.upper().strip())
+    # Normalizza il nome cercato (toglie spazi extra, tutto maiuscolo per confronto)
+    query_clean = name_query.strip().upper()
     
-    # Se il mapping esiste, usa quel nome specifico per cercare nel DB
-    search_term = target_name if target_name else name_query
+    # 1. TENTATIVO MATCH ESATTO
+    for ex in db_exercises:
+        if ex['name'].strip().upper() == query_clean:
+            return [BASE_URL + img for img in ex.get('images', [])]
 
-    # 2. RICERCA NEL DB
+    # 2. TENTATIVO FUZZY (Se non trova l'esatto)
+    # Usa token_sort_ratio per ignorare l'ordine delle parole (es: "Barbell Incline" trova "Incline Barbell")
     db_names = [x['name'] for x in db_exercises]
+    match = process.extractOne(name_query, db_names, scorer=fuzz.token_sort_ratio)
     
-    # Se abbiamo trovato un mapping esatto, cerchiamo la corrispondenza esatta
-    if target_name:
-         for ex in db_exercises:
-            if ex['name'].lower() == target_name.lower():
-                return [BASE_URL + img for img in ex.get('images', [])]
-
-    # 3. FALLBACK: FUZZY SEARCH (Solo se non c'è nel dizionario o non trova nulla)
-    # Usa token_sort_ratio con soglia alta per evitare errori
-    match = process.extractOne(search_term, db_names, scorer=fuzz.token_sort_ratio)
-    
-    if match and match[1] >= 75: 
+    # Soglia 85: garantisce che "Incline Bench" non trovi "Decline Bench"
+    if match and match[1] >= 85:
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
@@ -399,6 +396,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
