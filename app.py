@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI
+# 2. MOTORE AI & IMMAGINI - FIX PROFESSIONALE
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -121,7 +121,11 @@ def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     db_names = [x['name'] for x in db_exercises]
-    match = process.extractOne(name_query, db_names, scorer=fuzz.fuzz.token_sort_ratio)
+    
+    # CORREZIONE: fuzz.token_sort_ratio (non fuzz.fuzz)
+    # SOGLIA: 85 per evitare errori tra Machine Chest Press e Squat
+    match = process.extractOne(name_query, db_names, scorer=fuzz.token_sort_ratio)
+    
     if match and match[1] > 85:
         for ex in db_exercises:
             if ex['name'] == match[0]:
@@ -373,4 +377,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
