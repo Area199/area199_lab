@@ -192,7 +192,7 @@ def find_exercise_images(name_query, db_exercises):
     # Usa token_sort_ratio con soglia alta per evitare errori
     match = process.extractOne(search_term, db_names, scorer=fuzz.token_sort_ratio)
     
-    if match and match[1] >= 85: 
+    if match and match[1] >= 75: 
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
@@ -443,6 +443,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
