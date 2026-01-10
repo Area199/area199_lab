@@ -122,7 +122,7 @@ def find_exercise_images(name_query, db_exercises):
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
-    if match and match[1] > 60:
+    if match and match[1] > 80:
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
@@ -373,3 +373,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
