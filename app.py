@@ -110,26 +110,93 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI - REVISIONE AREA199
+# 2. MOTORE AI & IMMAGINI - DIZIONARIO UNIVERSALE AREA199
 # ==============================================================================
+import requests
+from rapidfuzz import process, fuzz
+import streamlit as st
+
 @st.cache_data
 def load_exercise_db():
-    try: return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
-    except: return []
+    try: 
+        return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
+    except: 
+        return []
+
+# MAPPING DIZIONARIO: TRADUCE IL TUO LINGUAGGIO NEL LINGUAGGIO DEL DATABASE
+# Aggiungi qui tutti gli esercizi che usi di solito. Questo vale per TUTTI i clienti.
+EXERCISE_MAP = {
+    # PETTO
+    "INCLINE BARBELL BENCH PRESS": "Barbell Incline Bench Press",
+    "DUMBBELL FLY": "Dumbbell Flyes",
+    "DUMBBELL FLYES": "Dumbbell Flyes",
+    "CHEST PRESS MACHINE": "Leverage Chest Press",
+    "PEC DECK": "Butterfly",
+    "INCLINE DUMBBELL BENCH PRESS": "Dumbbell Incline Bench Press",
+    "INCLINE DUMBBELL PRESS": "Dumbbell Incline Bench Press",
+    
+    # SPALLE
+    "DUMBBELL LATERAL RAISE": "Dumbbell Lateral Raise",
+    "CABLE FRONT RAISE": "Cable Front Raise",
+    "DUMBBELL SHOULDER PRESS": "Dumbbell Shoulder Press",
+    "FACE PULL": "Face Pull",
+    "CABLE LATERAL RAISE": "Cable Lateral Raise",
+    
+    # SCHIENA
+    "CHEST SUPPORTED ROW": "Leverage Incline Row",
+    "LAT PULLDOWN": "Wide Grip Lat Pulldown",
+    "WIDE GRIP LAT PULLDOWN": "Wide Grip Lat Pulldown",
+    "CABLE ROW": "Seated Cable Rows",
+    "SEATED CABLE ROWS": "Seated Cable Rows",
+    "STRAIGHT ARM PULLDOWN": "Rope Straight Arm Pulldown",
+    "NEUTRAL GRIP LAT PULLDOWN": "V-Bar Lat Pulldown",
+    "V-BAR LAT PULLDOWN": "V-Bar Lat Pulldown",
+    "LEVERAGE ROWS": "Leverage Rows",
+    
+    # GAMBE
+    "LEG PRESS": "Leg Press",
+    "LEG EXTENSION": "Leg Extension",
+    "SEATED LEG CURL": "Seated Leg Curl",
+    "SEATED CALF RAISE": "Seated Calf Raise",
+    
+    # BRACCIA
+    "DUMBBELL HAMMER CURL": "Hammer Curls",
+    "HAMMER CURLS": "Hammer Curls",
+    "TRICEPS PUSHDOWN": "Pushdowns",
+    "PREACHER CURL MACHINE": "Leverage Preacher Curl",
+    "DUMBBELL BICEP CURL": "Dumbbell Curl",
+    "DUMBBELL CURL": "Dumbbell Curl"
+}
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+    
+    # 1. CONTROLLO DIZIONARIO (MAPPING DIRETTO)
+    # Cerca se il nome che hai scritto esiste nel dizionario EXERCISE_MAP
+    target_name = EXERCISE_MAP.get(name_query.upper().strip())
+    
+    # Se il mapping esiste, usa quel nome specifico per cercare nel DB
+    search_term = target_name if target_name else name_query
+
+    # 2. RICERCA NEL DB
     db_names = [x['name'] for x in db_exercises]
     
-    # FIX: Chiamata diretta a fuzz.token_sort_ratio
-    match = process.extractOne(name_query, db_names, scorer=fuzz.token_sort_ratio)
+    # Se abbiamo trovato un mapping esatto, cerchiamo la corrispondenza esatta
+    if target_name:
+         for ex in db_exercises:
+            if ex['name'].lower() == target_name.lower():
+                return [BASE_URL + img for img in ex.get('images', [])]
+
+    # 3. FALLBACK: FUZZY SEARCH (Solo se non c'è nel dizionario o non trova nulla)
+    # Usa token_sort_ratio con soglia alta per evitare errori
+    match = process.extractOne(search_term, db_names, scorer=fuzz.token_sort_ratio)
     
-    # Soglia 85 garantisce che "Incline" non diventi "Decline"
-    if match and match[1] > 85:
+    if match and match[1] >= 85: 
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
+                
     return []
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
@@ -376,6 +443,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
