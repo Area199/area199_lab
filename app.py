@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import re
-import ast  # <--- NUOVA LIBRERIA PER CORREGGERE GLI ERRORI DI LETTURA
+import ast
 from datetime import datetime
 import openai
 import requests
@@ -30,12 +30,12 @@ st.markdown("""
     .exercise-details { color: #ccc; font-size: 1em; }
     .exercise-note { color: #888; font-style: italic; font-size: 0.9em; border-left: 2px solid #E20613; padding-left: 10px; margin-top: 5px; }
     
-    .debug-text { color: orange; font-family: monospace; font-size: 0.8em; }
+    .debug-img { font-size: 0.7em; color: #ffcc00; font-family: monospace; background: #222; padding: 2px 5px; margin-bottom: 5px; display: inline-block; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE DATI
+# 1. UTILITIES & MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
@@ -110,54 +110,58 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (POTENZIATO)
+# 2. MOTORE AI & IMMAGINI (CON DEBUG)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
-    try: return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
+    url = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
+    try: 
+        resp = requests.get(url)
+        if resp.status_code == 200:
+            return resp.json()
+        return []
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
     """
-    Cerca le immagini con logica fuzzy e fallback.
+    Ritorna una tupla: (lista_immagini, messaggio_debug)
     """
-    if not db_exercises or not name_query: return []
+    if not db_exercises: return ([], "DB Vuoto")
+    if not name_query: return ([], "Query Vuota")
+    
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     db_names = [x['name'] for x in db_exercises]
     
-    # 1. Tentativo Diretto
+    # 1. Match Diretto
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
     
-    # Se il match è buono (>50 è molto tollerante)
-    if match and match[1] > 50:
+    if match and match[1] > 50: # Soglia bassa
         for ex in db_exercises:
             if ex['name'] == match[0]:
-                return [BASE_URL + img for img in ex.get('images', [])]
+                imgs = [BASE_URL + img for img in ex.get('images', [])]
+                return (imgs, f"Match: {match[0]} ({match[1]}%)")
     
-    # 2. Tentativo Fallback: Rimuovi parole comuni che confondono (Cable, Dumbbell, Barbell)
-    clean_query = name_query.replace("Cable", "").replace("Dumbbell", "").replace("Barbell", "").replace("Machine", "").strip()
-    if clean_query != name_query:
-        match_clean = process.extractOne(clean_query, db_names, scorer=fuzz.token_set_ratio)
-        if match_clean and match_clean[1] > 50:
+    # 2. Fallback (Rimuove parole "inutili")
+    clean = name_query.lower().replace("cable", "").replace("machine", "").replace("dumbbell", "").replace("barbell", "").strip()
+    if clean and clean != name_query.lower():
+        match2 = process.extractOne(clean, db_names, scorer=fuzz.token_set_ratio)
+        if match2 and match2[1] > 50:
             for ex in db_exercises:
-                if ex['name'] == match_clean[0]:
-                    return [BASE_URL + img for img in ex.get('images', [])]
+                if ex['name'] == match2[0]:
+                    imgs = [BASE_URL + img for img in ex.get('images', [])]
+                    return (imgs, f"Fallback: {match2[0]} ({match2[1]}%)")
 
-    return []
+    return ([], f"Nessun match per '{name_query}' (Best: {match[0] if match else 'None'} {match[1] if match else 0}%)")
 
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
 # ==============================================================================
 
-def render_preview_card(plan_json):
-    """
-    Renderizza la scheda gestendo errori e formati diversi.
-    """
+def render_preview_card(plan_json, show_debug=False):
     if not plan_json:
         st.error("⚠️ Dati vuoti.")
         return
 
-    # Gestione Maiuscole/Minuscole
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     
     if not sessions:
@@ -171,13 +175,24 @@ def render_preview_card(plan_json):
         exercises = session.get('exercises', session.get('Exercises', []))
         for ex in exercises:
             with st.container():
+                # DEBUG VISIVO (Solo se richiesto, es. lato coach)
+                if show_debug:
+                    debug_msg = ex.get('debug_info', 'N/A')
+                    st.markdown(f"<div class='debug-img'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
+
                 c1, c2 = st.columns([2, 3])
+                
+                # Immagini
                 with c1:
-                    if ex.get('images'):
+                    if ex.get('images') and len(ex['images']) > 0:
                         cols_img = st.columns(2)
                         cols_img[0].image(ex['images'][0], use_container_width=True)
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
+                    else:
+                        st.markdown("<div style='color:#444; font-size:0.8em; padding:20px; border:1px dashed #333; text-align:center;'>NO IMAGE</div>", unsafe_allow_html=True)
+                
+                # Testo
                 with c2:
                     name = ex.get('name', ex.get('Name', 'Esercizio'))
                     details = ex.get('details', ex.get('Details', ''))
@@ -195,6 +210,9 @@ def render_preview_card(plan_json):
 def coach_dashboard():
     client = get_client()
     ex_db = load_exercise_db()
+    
+    if not ex_db:
+        st.error("❌ ERRORE CRITICO: Il Database Immagini non risponde. Controlla la connessione internet.")
     
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
@@ -254,35 +272,42 @@ def coach_dashboard():
             comment_input = st.text_area("Feedback", height=300, key="input_comment")
         with c2:
             st.subheader("2. INCOLLA SCHEDA")
-            raw_input = st.text_area("Testo grezzo", height=600, key="input_raw", placeholder="Sessione A\nPANCA...")
+            raw_input = st.text_area("Testo grezzo", height=600, key="input_raw", placeholder="Sessione A\nESERCIZIO: Panca | SEARCH_NAME: Bench Press...")
 
         if st.button("🔄 1. GENERA ANTEPRIMA"):
             if not raw_input:
                 st.error("Incolla la scheda!")
             else:
-                with st.spinner("L'AI sta strutturando il programma..."):
+                with st.spinner("Analisi scheda e ricerca immagini..."):
                     prompt = f"""
                     Agisci come un parser JSON rigoroso.
-                    INPUT UTENTE:
-                    {raw_input}
                     
-                    SCHEMA JSON OBBLIGATORIO:
+                    INPUT UTENTE (Scheda Allenamento):
+                    ----------------------------------
+                    {raw_input}
+                    ----------------------------------
+                    
+                    ISTRUZIONI SPECIALI:
+                    1. Estrai il campo "SEARCH_NAME" se presente e usalo per il campo "search_name".
+                    2. Se "SEARCH_NAME" non c'è, crea tu un "search_name" in INGLESE GENERICO E SEMPLICE (Es: "Chest Press" invece di "Convergent Chest Press").
+                    3. Il campo "name" deve essere quello originale ITALIANO.
+                    
+                    SCHEMA JSON:
                     {{
                         "sessions": [
                             {{
                                 "name": "Nome Sessione",
                                 "exercises": [
                                     {{
-                                        "name": "Nome ITALIANO",
-                                        "search_name": "Nome INGLESE (per ricerca foto)",
-                                        "details": "Serie x Reps",
+                                        "name": "Nome Esatto",
+                                        "search_name": "Nome Semplice Inglese",
+                                        "details": "Dettagli",
                                         "note": "Note"
                                     }}
                                 ]
                             }}
                         ]
                     }}
-                    Rispondi SOLO con il JSON.
                     """
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
@@ -290,28 +315,33 @@ def coach_dashboard():
                         clean_text = clean_json_response(res.choices[0].message.content)
                         plan_json = json.loads(clean_text)
                         
+                        # RICERCA IMMAGINI
                         for s in plan_json.get('sessions', []):
                             for ex in s.get('exercises', []):
                                 query = ex.get('search_name', ex.get('name'))
-                                ex['images'] = find_exercise_images(query, ex_db)[:2]
+                                imgs, debug_msg = find_exercise_images(query, ex_db)
+                                ex['images'] = imgs[:2]
+                                ex['debug_info'] = f"Search: '{query}' -> {debug_msg}"
                         
                         st.session_state['generated_plan'] = plan_json
                         st.session_state['coach_comment'] = comment_input
                         st.rerun() 
-                    except Exception as e: st.error(f"Errore AI: {e}")
+                    except Exception as e: 
+                        st.error(f"Errore AI: {e}")
 
         if st.session_state.get('generated_plan'):
             st.markdown("---")
             st.subheader("👁️ ANTEPRIMA")
             if st.session_state['coach_comment']: st.info(st.session_state['coach_comment'])
-            render_preview_card(st.session_state['generated_plan'])
+            
+            # Mostra la scheda con il DEBUG attivo (scritta gialla)
+            render_preview_card(st.session_state['generated_plan'], show_debug=True)
             
             if st.button("✅ 2. INVIA AL CLIENTE", type="primary"):
                 try:
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                     full_name = f"{sel_email}" 
                     
-                    # SALVATAGGIO SICURO
                     json_str = json.dumps(st.session_state['generated_plan'])
                     
                     db.append_row([
@@ -326,7 +356,7 @@ def coach_dashboard():
                 except Exception as e: st.error(f"Errore DB: {e}")
 
 # ==============================================================================
-# 5. DASHBOARD ATLETA (FIX ROBUSTO)
+# 5. DASHBOARD ATLETA
 # ==============================================================================
 
 def athlete_dashboard():
@@ -349,26 +379,23 @@ def athlete_dashboard():
                 
                 st.divider()
                 
-                # --- RECUPERO DATI ROBUSTO ---
-                # 1. Cerca la colonna giusta
                 raw_json = last_plan.get('JSON_Completo') or last_plan.get('JSON_Scheda') or last_plan.get('JSON')
                 
                 if not raw_json:
-                    st.error("⚠️ ERRORE: Campo dati vuoto nel Database.")
+                    st.error("⚠️ Dati vuoti nel DB.")
                 else:
-                    # 2. Tenta la decodifica in due modi (JSON standard o Python Dict)
                     try:
                         plan_json = json.loads(raw_json)
-                        render_preview_card(plan_json)
+                        # All'atleta NON mostriamo il debug
+                        render_preview_card(plan_json, show_debug=False)
                     except:
                         try:
-                            # Tenta di riparare se è salvato come dizionario python (virgolette singole)
                             import ast
                             plan_json = ast.literal_eval(raw_json)
-                            render_preview_card(plan_json)
-                        except Exception as e:
+                            render_preview_card(plan_json, show_debug=False)
+                        except:
                             st.error("⚠️ FORMATO DATI NON VALIDO.")
-                            st.write("Contenuto grezzo:", raw_json)
+                            st.code(raw_json)
             else:
                 st.warning("Nessuna scheda trovata per questa email.")
         except Exception as e:
@@ -390,5 +417,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
