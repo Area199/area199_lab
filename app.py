@@ -110,75 +110,66 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (BLINDATO)
+# 2. MOTORE AI & IMMAGINI (ULTRA POTENZIATO)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
-    url = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
-    try: 
-        resp = requests.get(url)
-        if resp.status_code == 200:
-            return resp.json()
-        return []
+    try: return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
-    """
-    Sistema di ricerca a cascata: Esatto -> Parole Chiave -> Fuzzy
-    """
-    if not db_exercises: return ([], "DB Vuoto")
-    if not name_query: return ([], "Query Vuota")
-    
+    if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     
-    # Normalizzazione Query (Tutto minuscolo, niente spazi extra)
     q = name_query.lower().strip()
     
-    # 1. MATCH ESATTO (Super veloce)
+    # 1. MATCH ESATTO
     for ex in db_exercises:
         if ex['name'].lower() == q:
             imgs = [BASE_URL + img for img in ex.get('images', [])]
             return (imgs, f"Match Esatto: {ex['name']}")
 
-    # 2. MATCH PAROLE CHIAVE (Molto potente per nomi lunghi)
-    # Esempio: Query "Incline Dumbbell Press" -> Cerca esercizio che ha "Incline" AND "Dumbbell" AND "Press"
+    # 2. MATCH PAROLE CHIAVE (Tutte le parole presenti)
     q_words = set(q.split())
     candidates = []
-    
     for ex in db_exercises:
-        db_name_clean = ex['name'].lower()
-        db_words = set(db_name_clean.split())
-        
-        # Se tutte le parole della query sono nel nome del DB
-        if q_words.issubset(db_words):
-            candidates.append(ex)
+        db_words = set(ex['name'].lower().split())
+        if q_words.issubset(db_words): candidates.append(ex)
             
     if candidates:
-        # Prende quello col nome più corto (probabilmente il più attinente)
-        # Es: "Leg Press" è meglio di "Single Leg Press" se cerco "Leg Press"
-        best_match = min(candidates, key=lambda x: len(x['name']))
-        imgs = [BASE_URL + img for img in best_match.get('images', [])]
-        return (imgs, f"Match Parole: {best_match['name']}")
+        best = min(candidates, key=lambda x: len(x['name']))
+        return ([BASE_URL + i for i in best.get('images', [])], f"Match Parole: {best['name']}")
 
-    # 3. FUZZY MATCH (Ultima spiaggia per errori di battitura)
+    # 3. FUZZY MATCH
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
-    
     if match and match[1] > 60:
         for ex in db_exercises:
             if ex['name'] == match[0]:
-                imgs = [BASE_URL + img for img in ex.get('images', [])]
-                return (imgs, f"Fuzzy Match: {match[0]} ({match[1]}%)")
+                return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy: {match[0]} ({match[1]}%)")
 
-    # 4. FALLBACK ESTREMO (Rimuove parole "rumorose")
-    q_clean = q.replace("cable", "").replace("machine", "").replace("dumbbell", "").replace("barbell", "").strip()
-    if q_clean and q_clean != q:
-        match2 = process.extractOne(q_clean, db_names, scorer=fuzz.token_set_ratio)
-        if match2 and match2[1] > 60:
+    # 4. FALLBACK INTELLIGENTE (Nuova Logica)
+    # Sostituisce termini specifici con termini generici che esistono nel DB
+    replacements = {
+        "pec deck": "fly",
+        "reverse pec deck": "reverse fly",
+        "machine": "",
+        "t-bar row": "bent over row", # Simile biomeccanicamente
+        "convergent": ""
+    }
+    
+    q_smart = q
+    for k, v in replacements.items():
+        q_smart = q_smart.replace(k, v)
+    
+    q_smart = q_smart.strip()
+    
+    if q_smart and q_smart != q:
+        match2 = process.extractOne(q_smart, db_names, scorer=fuzz.token_set_ratio)
+        if match2 and match2[1] > 55:
             for ex in db_exercises:
                 if ex['name'] == match2[0]:
-                    imgs = [BASE_URL + img for img in ex.get('images', [])]
-                    return (imgs, f"Fallback Clean: {match2[0]}")
+                    return ([BASE_URL + i for i in ex.get('images', [])], f"Smart Fallback: {match2[0]}")
 
     return ([], f"Nessun risultato per '{name_query}'")
 
@@ -192,7 +183,6 @@ def render_preview_card(plan_json, show_debug=False):
         return
 
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
-    
     if not sessions:
         st.warning("⚠️ Nessuna sessione trovata.")
         return
@@ -204,26 +194,20 @@ def render_preview_card(plan_json, show_debug=False):
         exercises = session.get('exercises', session.get('Exercises', []))
         for ex in exercises:
             with st.container():
-                # DEBUG VISIVO
                 if show_debug:
                     debug_msg = ex.get('debug_info', 'N/A')
-                    # Colora di rosso se non trova, verde se trova
                     color = "#ff4b4b" if "Nessun risultato" in debug_msg else "#4ade80"
                     st.markdown(f"<div class='debug-img' style='color:{color}'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
 
                 c1, c2 = st.columns([2, 3])
-                
-                # Immagini
                 with c1:
-                    if ex.get('images') and len(ex['images']) > 0:
+                    if ex.get('images'):
                         cols_img = st.columns(2)
                         cols_img[0].image(ex['images'][0], use_container_width=True)
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
                     else:
                         st.markdown("<div style='color:#444; font-size:0.8em; padding:20px; border:1px dashed #333; text-align:center;'>NO IMAGE</div>", unsafe_allow_html=True)
-                
-                # Testo
                 with c2:
                     name = ex.get('name', ex.get('Name', 'Esercizio'))
                     details = ex.get('details', ex.get('Details', ''))
@@ -242,9 +226,6 @@ def coach_dashboard():
     client = get_client()
     ex_db = load_exercise_db()
     
-    if not ex_db:
-        st.error("❌ ERRORE CRITICO: Il Database Immagini non risponde.")
-    
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
         raw_emails = [str(r.get('E-mail') or r.get('Email')).strip().lower() for r in sh_ana.get_all_records()]
@@ -260,7 +241,6 @@ def coach_dashboard():
             st.session_state['coach_comment'] = ""
 
         history = get_full_history(sel_email)
-        
         st.header(f"Analisi: {sel_email}")
         
         if not history:
@@ -312,16 +292,13 @@ def coach_dashboard():
                 with st.spinner("Analisi scheda e ricerca immagini..."):
                     prompt = f"""
                     Agisci come un parser JSON rigoroso.
-                    
-                    INPUT UTENTE (Scheda Allenamento):
-                    ----------------------------------
+                    INPUT UTENTE:
                     {raw_input}
-                    ----------------------------------
                     
                     ISTRUZIONI SPECIALI:
-                    1. Estrai il campo "SEARCH_NAME" se presente e usalo per il campo "search_name".
-                    2. Se "SEARCH_NAME" non c'è, crea tu un "search_name" in INGLESE GENERICO.
-                    3. Il campo "name" deve essere quello originale ITALIANO.
+                    1. Estrai "SEARCH_NAME" se presente per il campo "search_name".
+                    2. Se "SEARCH_NAME" non c'è, crea un "search_name" INGLESE GENERICO.
+                    3. "name" DEVE essere l'originale ITALIANO.
                     
                     SCHEMA JSON:
                     {{
@@ -346,7 +323,6 @@ def coach_dashboard():
                         clean_text = clean_json_response(res.choices[0].message.content)
                         plan_json = json.loads(clean_text)
                         
-                        # RICERCA IMMAGINI
                         for s in plan_json.get('sessions', []):
                             for ex in s.get('exercises', []):
                                 query = ex.get('search_name', ex.get('name'))
@@ -357,30 +333,20 @@ def coach_dashboard():
                         st.session_state['generated_plan'] = plan_json
                         st.session_state['coach_comment'] = comment_input
                         st.rerun() 
-                    except Exception as e: 
-                        st.error(f"Errore AI: {e}")
+                    except Exception as e: st.error(f"Errore AI: {e}")
 
         if st.session_state.get('generated_plan'):
             st.markdown("---")
             st.subheader("👁️ ANTEPRIMA")
             if st.session_state['coach_comment']: st.info(st.session_state['coach_comment'])
-            
             render_preview_card(st.session_state['generated_plan'], show_debug=True)
             
             if st.button("✅ 2. INVIA AL CLIENTE", type="primary"):
                 try:
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                     full_name = f"{sel_email}" 
-                    
                     json_str = json.dumps(st.session_state['generated_plan'])
-                    
-                    db.append_row([
-                        datetime.now().strftime("%Y-%m-%d"),
-                        sel_email,
-                        full_name,
-                        st.session_state['coach_comment'],
-                        json_str 
-                    ])
+                    db.append_row([datetime.now().strftime("%Y-%m-%d"), sel_email, full_name, st.session_state['coach_comment'], json_str])
                     st.success("INVIATA!")
                     st.session_state['generated_plan'] = None
                 except Exception as e: st.error(f"Errore DB: {e}")
@@ -403,16 +369,11 @@ def athlete_dashboard():
             if my_plans:
                 last_plan = my_plans[-1]
                 st.title(f"Scheda del {last_plan['Data']}")
-                
-                if last_plan.get('Commento'):
-                    st.info(f"💬 **Messaggio dal Coach:**\n\n{last_plan['Commento']}")
-                
+                if last_plan.get('Commento'): st.info(f"💬 **Messaggio dal Coach:**\n\n{last_plan['Commento']}")
                 st.divider()
                 
                 raw_json = last_plan.get('JSON_Completo') or last_plan.get('JSON_Scheda') or last_plan.get('JSON')
-                
-                if not raw_json:
-                    st.error("⚠️ Dati vuoti nel DB.")
+                if not raw_json: st.error("⚠️ Dati vuoti nel DB.")
                 else:
                     try:
                         plan_json = json.loads(raw_json)
@@ -422,13 +383,9 @@ def athlete_dashboard():
                             import ast
                             plan_json = ast.literal_eval(raw_json)
                             render_preview_card(plan_json, show_debug=False)
-                        except:
-                            st.error("⚠️ FORMATO DATI NON VALIDO.")
-                            st.code(raw_json)
-            else:
-                st.warning("Nessuna scheda trovata per questa email.")
-        except Exception as e:
-            st.error(f"Errore connessione: {e}")
+                        except: st.error("⚠️ FORMATO DATI NON VALIDO."); st.code(raw_json)
+            else: st.warning("Nessuna scheda trovata per questa email.")
+        except Exception as e: st.error(f"Errore connessione: {e}")
 
 # ==============================================================================
 # MAIN
@@ -436,13 +393,10 @@ def athlete_dashboard():
 
 def main():
     mode = st.sidebar.radio("MODALITÀ", ["Coach Admin", "Atleta"])
-    
     if mode == "Coach Admin":
         pwd = st.sidebar.text_input("Password", type="password")
-        if pwd == "PETRUZZI199":
-            coach_dashboard()
-    else:
-        athlete_dashboard()
+        if pwd == "PETRUZZI199": coach_dashboard()
+    else: athlete_dashboard()
 
 if __name__ == "__main__":
     main()
