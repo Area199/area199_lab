@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (ULTRA POTENZIATO)
+# 2. MOTORE AI & IMMAGINI (CON TRADUTTORE MANUALE)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -118,10 +118,35 @@ def load_exercise_db():
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
+    """
+    Cerca le immagini usando un dizionario manuale per correggere i nomi comuni.
+    """
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     
     q = name_query.lower().strip()
+
+    # --- 0. DIZIONARIO MANUALE (La cura per Pec Deck e simili) ---
+    # Mappa: "Nome che scrivi tu" : "Nome che vuole il DB"
+    manual_map = {
+        "pec deck": "machine fly",
+        "reverse pec deck": "rear delt machine",
+        "chest press": "lever chest press",
+        "lat machine": "cable pulldown",
+        "lat pulldown": "cable pulldown",
+        "leg press": "sled 45 leg press",
+        "calf raise": "lever seated calf raise",
+        "hyperextension": "hyperextensions",
+        "t-bar": "bent over row", # Simile
+        "rope hammer": "cable rope hammer curl",
+        "pushdown": "pushdowns"
+    }
+
+    # Se la query contiene una delle chiavi, sostituiscila
+    for key, val in manual_map.items():
+        if key in q:
+            q = val # Usa il nome "giusto"
+            break
     
     # 1. MATCH ESATTO
     for ex in db_exercises:
@@ -129,7 +154,7 @@ def find_exercise_images(name_query, db_exercises):
             imgs = [BASE_URL + img for img in ex.get('images', [])]
             return (imgs, f"Match Esatto: {ex['name']}")
 
-    # 2. MATCH PAROLE CHIAVE (Tutte le parole presenti)
+    # 2. MATCH PAROLE CHIAVE
     q_words = set(q.split())
     candidates = []
     for ex in db_exercises:
@@ -148,24 +173,10 @@ def find_exercise_images(name_query, db_exercises):
             if ex['name'] == match[0]:
                 return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy: {match[0]} ({match[1]}%)")
 
-    # 4. FALLBACK INTELLIGENTE (Nuova Logica)
-    # Sostituisce termini specifici con termini generici che esistono nel DB
-    replacements = {
-        "pec deck": "fly",
-        "reverse pec deck": "reverse fly",
-        "machine": "",
-        "t-bar row": "bent over row", # Simile biomeccanicamente
-        "convergent": ""
-    }
-    
-    q_smart = q
-    for k, v in replacements.items():
-        q_smart = q_smart.replace(k, v)
-    
-    q_smart = q_smart.strip()
-    
-    if q_smart and q_smart != q:
-        match2 = process.extractOne(q_smart, db_names, scorer=fuzz.token_set_ratio)
+    # 4. FALLBACK
+    q_clean = q.replace("cable", "").replace("machine", "").replace("dumbbell", "").replace("barbell", "").strip()
+    if q_clean and q_clean != q:
+        match2 = process.extractOne(q_clean, db_names, scorer=fuzz.token_set_ratio)
         if match2 and match2[1] > 55:
             for ex in db_exercises:
                 if ex['name'] == match2[0]:
