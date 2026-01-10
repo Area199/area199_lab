@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI
+# 2. MOTORE AI & IMMAGINI (POTENZIATO)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -118,14 +118,31 @@ def load_exercise_db():
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
+    """
+    Cerca le immagini con logica fuzzy e fallback.
+    """
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     db_names = [x['name'] for x in db_exercises]
+    
+    # 1. Tentativo Diretto
     match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
-    if match and match[1] > 80:
+    
+    # Se il match è buono (>50 è molto tollerante)
+    if match and match[1] > 50:
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
+    
+    # 2. Tentativo Fallback: Rimuovi parole comuni che confondono (Cable, Dumbbell, Barbell)
+    clean_query = name_query.replace("Cable", "").replace("Dumbbell", "").replace("Barbell", "").replace("Machine", "").strip()
+    if clean_query != name_query:
+        match_clean = process.extractOne(clean_query, db_names, scorer=fuzz.token_set_ratio)
+        if match_clean and match_clean[1] > 50:
+            for ex in db_exercises:
+                if ex['name'] == match_clean[0]:
+                    return [BASE_URL + img for img in ex.get('images', [])]
+
     return []
 
 # ==============================================================================
@@ -373,4 +390,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
