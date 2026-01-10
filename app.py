@@ -123,50 +123,6 @@ def load_exercise_db():
     except: 
         return []
 
-# MAPPING DIZIONARIO: TRADUCE IL TUO LINGUAGGIO NEL LINGUAGGIO DEL DATABASE
-# Aggiungi qui tutti gli esercizi che usi di solito. Questo vale per TUTTI i clienti.
-EXERCISE_MAP = {
-    # PETTO
-    "INCLINE BARBELL BENCH PRESS": "Barbell Incline Bench Press",
-    "DUMBBELL FLY": "Dumbbell Flyes",
-    "DUMBBELL FLYES": "Dumbbell Flyes",
-    "CHEST PRESS MACHINE": "Leverage Chest Press",
-    "PEC DECK": "Butterfly",
-    "INCLINE DUMBBELL BENCH PRESS": "Dumbbell Incline Bench Press",
-    "INCLINE DUMBBELL PRESS": "Dumbbell Incline Bench Press",
-    
-    # SPALLE
-    "DUMBBELL LATERAL RAISE": "Dumbbell Lateral Raise",
-    "CABLE FRONT RAISE": "Cable Front Raise",
-    "DUMBBELL SHOULDER PRESS": "Dumbbell Shoulder Press",
-    "FACE PULL": "Face Pull",
-    "CABLE LATERAL RAISE": "Cable Lateral Raise",
-    
-    # SCHIENA
-    "CHEST SUPPORTED ROW": "Leverage Incline Row",
-    "LAT PULLDOWN": "Wide Grip Lat Pulldown",
-    "WIDE GRIP LAT PULLDOWN": "Wide Grip Lat Pulldown",
-    "CABLE ROW": "Seated Cable Rows",
-    "SEATED CABLE ROWS": "Seated Cable Rows",
-    "STRAIGHT ARM PULLDOWN": "Rope Straight Arm Pulldown",
-    "NEUTRAL GRIP LAT PULLDOWN": "V-Bar Lat Pulldown",
-    "V-BAR LAT PULLDOWN": "V-Bar Lat Pulldown",
-    "LEVERAGE ROWS": "Leverage Rows",
-    
-    # GAMBE
-    "LEG PRESS": "Leg Press",
-    "LEG EXTENSION": "Leg Extension",
-    "SEATED LEG CURL": "Seated Leg Curl",
-    "SEATED CALF RAISE": "Seated Calf Raise",
-    
-    # BRACCIA
-    "DUMBBELL HAMMER CURL": "Hammer Curls",
-    "HAMMER CURLS": "Hammer Curls",
-    "TRICEPS PUSHDOWN": "Pushdowns",
-    "PREACHER CURL MACHINE": "Leverage Preacher Curl",
-    "DUMBBELL BICEP CURL": "Dumbbell Curl",
-    "DUMBBELL CURL": "Dumbbell Curl"
-}
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return []
@@ -443,6 +399,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
