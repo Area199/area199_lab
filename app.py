@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (MAPPA COMPLETA + FILTRI SICUREZZA)
+# 2. MOTORE AI & IMMAGINI (TOKEN MATCH STRICT)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -120,89 +120,86 @@ def load_exercise_db():
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return ([], "DB/Query Vuota")
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
-    
     q = name_query.lower().strip()
 
-    # --- DIZIONARIO DI TRADUZIONE ESATTA (DAI TUOI NOMI AL DB) ---
-    # Questo forza l'associazione corretta
-    manual_map = {
-        "pec deck": "lever pec deck fly",
-        "incline dumbbell press": "dumbbell incline bench press",
-        "chest press": "lever chest press",
-        "convergent chest press": "lever chest press",
-        "dumbbell lateral raise": "dumbbell lateral raise",
-        "face pull": "cable standing face pull", # Specifico
-        "plank": "plank",
-        "straight arm pulldown": "cable straight arm pulldown",
-        "lat pulldown": "cable lat pulldown",
-        "t-bar row": "lever t-bar row",
-        "single arm cable row": "cable seated one arm row",
-        "cable row": "cable seated row",
-        "hyperextension": "hyperextensions", # Plurale nel DB
-        "vacuum": "stomach vacuum",
-        "leg curl": "lever lying leg curl",
-        "lying leg curl": "lever lying leg curl",
-        "leg press": "sled 45 degree leg press",
-        "leg extension": "lever leg extension",
-        "hip adduction": "lever seated hip adduction",
-        "calf raise": "lever seated calf raise",
-        "dead bug": "dead bug",
-        "hammer curl": "dumbbell hammer curl",
-        "rope hammer curl": "cable rope hammer curl",
-        "triceps pushdown": "cable pushdown",
-        "preacher curl": "lever preacher curl",
-        "overhead cable extension": "cable rope overhead triceps extension",
-        "reverse fly": "lever seated reverse fly",
-        "side plank": "side plank"
+    # --- MAPPA DELLE PAROLE OBBLIGATORIE ---
+    # "tuo nome" : ["parola1_obbligatoria", "parola2_obbligatoria"]
+    # Il sistema cercherà nel DB esercizi che contengono TUTTE le parole della lista.
+    # Se la lista è vuota, usa le parole della query originale.
+    token_map = {
+        "pec deck": ["pec", "deck"], 
+        "reverse pec deck": ["reverse", "fly"], # Correzione tecnica
+        "incline dumbbell press": ["incline", "dumbbell"],
+        "chest press": ["chest", "press"], 
+        "convergent chest press": ["chest", "press"],
+        "lateral raise": ["lateral", "raise"],
+        "face pull": ["face", "pull"], # Ora è impossibile che esca "Lift" perché manca "Face"
+        "plank": ["plank"],
+        "side plank": ["side", "plank"],
+        "lat pulldown": ["lat", "pulldown"],
+        "straight arm": ["straight", "arm"],
+        "t-bar": ["t-bar"], 
+        "cable row": ["cable", "row"],
+        "hyperextension": ["hyperextension"],
+        "vacuum": ["vacuum"],
+        "leg curl": ["leg", "curl"],
+        "lying leg curl": ["lying", "leg", "curl"],
+        "leg press": ["leg", "press"], # Matcherà "Sled 45 Degree Leg Press"
+        "leg extension": ["leg", "extension"],
+        "adduction": ["adduction"],
+        "calf raise": ["calf", "raise"],
+        "dead bug": ["dead", "bug"],
+        "hammer curl": ["hammer", "curl"],
+        "triceps pushdown": ["pushdown"],
+        "preacher curl": ["preacher"],
+        "overhead cable": ["overhead", "triceps"],
+        "reverse fly": ["reverse", "fly"]
     }
 
-    # Controlla se c'è una mappatura manuale
-    # Cerca parziale (es. se cerchi "Convergent Chest Press" trova "chest press" nella mappa)
-    mapped_name = None
-    for k, v in manual_map.items():
+    # 1. Determina i token (parole) necessari
+    required_tokens = []
+    
+    # Cerca nella mappa se la query contiene una chiave nota
+    match_key = None
+    for k, tokens in token_map.items():
         if k in q:
-            mapped_name = v
-            break # Trovato, usa questo!
+            required_tokens = tokens
+            match_key = k
+            break
     
-    target_name = mapped_name if mapped_name else q
-    
-    # --- RICERCA NEL DB ---
-    
-    # 1. Match Esatto (Priorità Massima)
+    # Se non c'è nella mappa, usa le parole della query stessa (minimo 3 caratteri)
+    if not required_tokens:
+        required_tokens = [w for w in q.split() if len(w) > 2]
+
+    # 2. Scansione Database
+    candidates = []
     for ex in db_exercises:
-        if ex['name'].lower() == target_name:
-            imgs = [BASE_URL + img for img in ex.get('images', [])]
-            return (imgs, f"Match Diretto: {ex['name']}")
+        db_name = ex['name'].lower()
+        
+        # Verifica se TUTTI i token richiesti sono nel nome del DB
+        # Es: required=["leg", "press"] -> "Sled 45 Degree Leg Press" -> OK
+        if all(token in db_name for token in required_tokens):
+            candidates.append(ex)
 
-    # 2. Fuzzy Match (Con filtro di sicurezza)
+    # 3. Selezione Migliore
+    if candidates:
+        # Se ci sono più candidati, prendi quello col nome più corto (di solito è quello "base")
+        # Es: Tra "Leg Press" e "Single Leg Press", vince "Leg Press"
+        best_match = min(candidates, key=lambda x: len(x['name']))
+        
+        imgs = [BASE_URL + img for img in best_match.get('images', [])]
+        used_tokens = "+".join(required_tokens)
+        return (imgs, f"Token Match: [{used_tokens}] -> {best_match['name']}")
+
+    # 4. Fallback Disperato (Fuzzy) se i token falliscono
     db_names = [x['name'] for x in db_exercises]
-    match = process.extractOne(target_name, db_names, scorer=fuzz.token_set_ratio)
-    
-    if match and match[1] > 65:
-        candidate_name = match[0].lower()
-        
-        # --- FILTRO ANTI-STUPIDITÀ ---
-        # Se cerco "Press" e trovo "Fly", è sbagliato.
-        bad_match = False
-        keywords_check = ["press", "fly", "row", "curl", "extension", "squat", "deadlift"]
-        
-        for kw in keywords_check:
-            # Se la parola chiave è nella query MA NON nel risultato (o viceversa), scarta
-            if (kw in target_name and kw not in candidate_name) or (kw not in target_name and kw in candidate_name):
-                # Eccezione: Chest Press Machine spesso si chiama "Lever Chest Press" (ok)
-                # Ma "Chest Press" non deve diventare "Bench Press" (simile ma diverso)
-                pass 
-        
-        # Filtro specifico per evitare "Bent Press" al posto di "Chest Press"
-        if "chest press" in target_name and "bent press" in candidate_name:
-            bad_match = True
-            
-        if not bad_match:
-            for ex in db_exercises:
-                if ex['name'] == match[0]:
-                    return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy Sicuro: {match[0]} ({match[1]}%)")
+    fuzzy = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
+    if fuzzy and fuzzy[1] > 70:
+         for ex in db_exercises:
+            if ex['name'] == fuzzy[0]:
+                return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy Fallback: {fuzzy[0]}")
 
-    return ([], f"Nessun risultato affidabile per '{q}' (Target: {target_name})")
+    return ([], f"Nessun risultato (Tokens: {required_tokens})")
 
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
@@ -359,7 +356,7 @@ def coach_dashboard():
                                 query = ex.get('search_name', ex.get('name'))
                                 imgs, debug_msg = find_exercise_images(query, ex_db)
                                 ex['images'] = imgs[:2]
-                                ex['debug_info'] = f"Search: '{query}' -> {debug_msg}"
+                                ex['debug_info'] = f"Query: '{query}' -> {debug_msg}"
                         
                         st.session_state['generated_plan'] = plan_json
                         st.session_state['coach_comment'] = comment_input
