@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (CON TRADUTTORE MANUALE)
+# 2. MOTORE AI & IMMAGINI (MAPPA COMPLETA + FILTRI SICUREZZA)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -118,71 +118,91 @@ def load_exercise_db():
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
-    """
-    Cerca le immagini usando un dizionario manuale per correggere i nomi comuni.
-    """
-    if not db_exercises or not name_query: return []
+    if not db_exercises or not name_query: return ([], "DB/Query Vuota")
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     
     q = name_query.lower().strip()
 
-    # --- 0. DIZIONARIO MANUALE (La cura per Pec Deck e simili) ---
-    # Mappa: "Nome che scrivi tu" : "Nome che vuole il DB"
+    # --- DIZIONARIO DI TRADUZIONE ESATTA (DAI TUOI NOMI AL DB) ---
+    # Questo forza l'associazione corretta
     manual_map = {
-        "pec deck": "machine fly",
-        "reverse pec deck": "rear delt machine",
+        "pec deck": "lever pec deck fly",
+        "incline dumbbell press": "dumbbell incline bench press",
         "chest press": "lever chest press",
-        "lat machine": "cable pulldown",
-        "lat pulldown": "cable pulldown",
-        "leg press": "sled 45 leg press",
+        "convergent chest press": "lever chest press",
+        "dumbbell lateral raise": "dumbbell lateral raise",
+        "face pull": "cable standing face pull", # Specifico
+        "plank": "plank",
+        "straight arm pulldown": "cable straight arm pulldown",
+        "lat pulldown": "cable lat pulldown",
+        "t-bar row": "lever t-bar row",
+        "single arm cable row": "cable seated one arm row",
+        "cable row": "cable seated row",
+        "hyperextension": "hyperextensions", # Plurale nel DB
+        "vacuum": "stomach vacuum",
+        "leg curl": "lever lying leg curl",
+        "lying leg curl": "lever lying leg curl",
+        "leg press": "sled 45 degree leg press",
+        "leg extension": "lever leg extension",
+        "hip adduction": "lever seated hip adduction",
         "calf raise": "lever seated calf raise",
-        "hyperextension": "hyperextensions",
-        "t-bar": "bent over row", # Simile
-        "rope hammer": "cable rope hammer curl",
-        "pushdown": "pushdowns"
+        "dead bug": "dead bug",
+        "hammer curl": "dumbbell hammer curl",
+        "rope hammer curl": "cable rope hammer curl",
+        "triceps pushdown": "cable pushdown",
+        "preacher curl": "lever preacher curl",
+        "overhead cable extension": "cable rope overhead triceps extension",
+        "reverse fly": "lever seated reverse fly",
+        "side plank": "side plank"
     }
 
-    # Se la query contiene una delle chiavi, sostituiscila
-    for key, val in manual_map.items():
-        if key in q:
-            q = val # Usa il nome "giusto"
-            break
+    # Controlla se c'è una mappatura manuale
+    # Cerca parziale (es. se cerchi "Convergent Chest Press" trova "chest press" nella mappa)
+    mapped_name = None
+    for k, v in manual_map.items():
+        if k in q:
+            mapped_name = v
+            break # Trovato, usa questo!
     
-    # 1. MATCH ESATTO
+    target_name = mapped_name if mapped_name else q
+    
+    # --- RICERCA NEL DB ---
+    
+    # 1. Match Esatto (Priorità Massima)
     for ex in db_exercises:
-        if ex['name'].lower() == q:
+        if ex['name'].lower() == target_name:
             imgs = [BASE_URL + img for img in ex.get('images', [])]
-            return (imgs, f"Match Esatto: {ex['name']}")
+            return (imgs, f"Match Diretto: {ex['name']}")
 
-    # 2. MATCH PAROLE CHIAVE
-    q_words = set(q.split())
-    candidates = []
-    for ex in db_exercises:
-        db_words = set(ex['name'].lower().split())
-        if q_words.issubset(db_words): candidates.append(ex)
-            
-    if candidates:
-        best = min(candidates, key=lambda x: len(x['name']))
-        return ([BASE_URL + i for i in best.get('images', [])], f"Match Parole: {best['name']}")
-
-    # 3. FUZZY MATCH
+    # 2. Fuzzy Match (Con filtro di sicurezza)
     db_names = [x['name'] for x in db_exercises]
-    match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
-    if match and match[1] > 60:
-        for ex in db_exercises:
-            if ex['name'] == match[0]:
-                return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy: {match[0]} ({match[1]}%)")
-
-    # 4. FALLBACK
-    q_clean = q.replace("cable", "").replace("machine", "").replace("dumbbell", "").replace("barbell", "").strip()
-    if q_clean and q_clean != q:
-        match2 = process.extractOne(q_clean, db_names, scorer=fuzz.token_set_ratio)
-        if match2 and match2[1] > 55:
+    match = process.extractOne(target_name, db_names, scorer=fuzz.token_set_ratio)
+    
+    if match and match[1] > 65:
+        candidate_name = match[0].lower()
+        
+        # --- FILTRO ANTI-STUPIDITÀ ---
+        # Se cerco "Press" e trovo "Fly", è sbagliato.
+        bad_match = False
+        keywords_check = ["press", "fly", "row", "curl", "extension", "squat", "deadlift"]
+        
+        for kw in keywords_check:
+            # Se la parola chiave è nella query MA NON nel risultato (o viceversa), scarta
+            if (kw in target_name and kw not in candidate_name) or (kw not in target_name and kw in candidate_name):
+                # Eccezione: Chest Press Machine spesso si chiama "Lever Chest Press" (ok)
+                # Ma "Chest Press" non deve diventare "Bench Press" (simile ma diverso)
+                pass 
+        
+        # Filtro specifico per evitare "Bent Press" al posto di "Chest Press"
+        if "chest press" in target_name and "bent press" in candidate_name:
+            bad_match = True
+            
+        if not bad_match:
             for ex in db_exercises:
-                if ex['name'] == match2[0]:
-                    return ([BASE_URL + i for i in ex.get('images', [])], f"Smart Fallback: {match2[0]}")
+                if ex['name'] == match[0]:
+                    return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy Sicuro: {match[0]} ({match[1]}%)")
 
-    return ([], f"Nessun risultato per '{name_query}'")
+    return ([], f"Nessun risultato affidabile per '{q}' (Target: {target_name})")
 
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
