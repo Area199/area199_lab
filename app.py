@@ -110,47 +110,24 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# MOTORE DI RICERCA IMMAGINI AREA199 (LOGICA DIRETTA)
+# 2. MOTORE AI & IMMAGINI
 # ==============================================================================
-import requests
-from rapidfuzz import process, fuzz
-import streamlit as st
-
 @st.cache_data
 def load_exercise_db():
-    try: 
-        return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
-    except: 
-        return []
+    try: return requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json").json()
+    except: return []
 
 def find_exercise_images(name_query, db_exercises):
-    """
-    1. Cerca corrispondenza esatta (case-insensitive).
-    2. Se fallisce, cerca per similitudine (fuzzy) con soglia alta.
-    """
     if not db_exercises or not name_query: return []
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
-    
-    # Normalizza il nome cercato (toglie spazi extra, tutto maiuscolo per confronto)
-    query_clean = name_query.strip().upper()
-    
-    # 1. TENTATIVO MATCH ESATTO
-    for ex in db_exercises:
-        if ex['name'].strip().upper() == query_clean:
-            return [BASE_URL + img for img in ex.get('images', [])]
-
-    # 2. TENTATIVO FUZZY (Se non trova l'esatto)
-    # Usa token_sort_ratio per ignorare l'ordine delle parole (es: "Barbell Incline" trova "Incline Barbell")
     db_names = [x['name'] for x in db_exercises]
-    match = process.extractOne(name_query, db_names, scorer=fuzz.token_sort_ratio)
-    
-    # Soglia 85: garantisce che "Incline Bench" non trovi "Decline Bench"
-    if match and match[1] >= 85:
+    match = process.extractOne(name_query, db_names, scorer=fuzz.token_set_ratio)
+    if match and match[1] > 60:
         for ex in db_exercises:
             if ex['name'] == match[0]:
                 return [BASE_URL + img for img in ex.get('images', [])]
-                
     return []
+
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
 # ==============================================================================
@@ -262,24 +239,15 @@ def coach_dashboard():
             st.subheader("2. INCOLLA SCHEDA")
             raw_input = st.text_area("Testo grezzo", height=600, key="input_raw", placeholder="Sessione A\nPANCA...")
 
-       # Cerca questa parte nel tuo codice
         if st.button("🔄 1. GENERA ANTEPRIMA"):
             if not raw_input:
                 st.error("Incolla la scheda!")
             else:
                 with st.spinner("L'AI sta strutturando il programma..."):
-                    
-                    # --- INIZIO DEL NUOVO BLOCCO PROMPT (INCOLLA QUI) ---
                     prompt = f"""
-                    Agisci come un parser JSON rigoroso per un software di High Performance.
-                    
+                    Agisci come un parser JSON rigoroso.
                     INPUT UTENTE:
                     {raw_input}
-                    
-                    ISTRUZIONI FONDAMENTALI:
-                    1. MANTIENI I NOMI DEGLI ESERCIZI ESATTAMENTE COME SCRITTI NELL'INPUT.
-                    2. NON TRADURRE NULLA IN ITALIANO.
-                    3. Il campo "name" e "search_name" DEVONO ESSERE IDENTICI.
                     
                     SCHEMA JSON OBBLIGATORIO:
                     {{
@@ -288,21 +256,17 @@ def coach_dashboard():
                                 "name": "Nome Sessione",
                                 "exercises": [
                                     {{
-                                        "name": "NOME ESERCIZIO ORIGINALE (NO TRADUZIONI)",
-                                        "search_name": "NOME ESERCIZIO ORIGINALE (NO TRADUZIONI)",
-                                        "details": "Serie x Reps / Rest / TUT",
-                                        "note": "Note tecniche e tutorial"
+                                        "name": "Nome ITALIANO",
+                                        "search_name": "Nome INGLESE (per ricerca foto)",
+                                        "details": "Serie x Reps",
+                                        "note": "Note"
                                     }}
                                 ]
                             }}
                         ]
                     }}
-                    Rispondi SOLO con il JSON valido.
+                    Rispondi SOLO con il JSON.
                     """
-                    # --- FINE DEL NUOVO BLOCCO PROMPT ---
-
-                    # Qui sotto c'è il resto del tuo codice che chiama l'AI (OpenAI o altro)
-                    # response = ... (NON TOCCARE QUELLO CHE C'È DOPO)
                     try:
                         client_ai = openai.Client(api_key=st.secrets["openai_key"])
                         res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}])
@@ -409,13 +373,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
