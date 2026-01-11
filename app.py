@@ -286,7 +286,7 @@ def render_diet_card(diet_json):
     html_content += "</body></html>"
     st.markdown(create_download_link_html(html_content, "Piano_Nutrizionale.html", "SCARICA PIANO NUTRIZIONALE"), unsafe_allow_html=True)
 
-    # --- RENDER VIDEO (DIETA + INTEGRAZIONE NELLA STESSA PAGINA) ---
+    # --- RENDER VIDEO ---
     if 'daily_calories' in diet_json:
         st.info(f"🔥 Target: {diet_json.get('daily_calories')} | 💧 {diet_json.get('water_intake', '2-3L')}")
 
@@ -403,8 +403,8 @@ def coach_dashboard():
         tab_w, tab_d = st.tabs(["🏋️‍♂️ ALLENAMENTO", "🥗 ALIMENTAZIONE (Dieta + Integrazione)"])
 
         with tab_w:
-            raw_workout = st.text_area("Incolla Scheda Allenamento", height=300, key="input_raw_workout", placeholder="Sessione A...")
-            note_workout = st.text_area("Note specifiche Scheda", height=80, key="input_note_w")
+            raw_workout = st.text_area("1. Incolla Scheda Allenamento", height=300, key="input_raw_workout", placeholder="Sessione A...")
+            note_workout = st.text_area("2. Note specifiche Scheda", height=80, key="input_note_w")
         
         with tab_d:
             st.info("Compila i box qui sotto. L'AI unirà tutto in un unico Piano Nutrizionale.")
@@ -421,7 +421,7 @@ def coach_dashboard():
             note_diet = st.text_area("Note per il cliente", height=80, key="input_note_d_combined")
 
         st.markdown("---")
-        comment_input = st.text_area("💬 MESSAGGIO CHAT GENERALE (Visibile in alto)", height=100, key="input_comment")
+        comment_input = st.text_area("💬 MESSAGGIO CHAT GENERALE (Visibile in alto a tutto)", height=100, key="input_comment")
 
         if st.button("🔄 GENERA ANTEPRIMA"):
             with st.spinner("Elaborazione..."):
@@ -447,6 +447,7 @@ def coach_dashboard():
 
                 # 2. DIETA + INTEGRAZIONE (MERGE IN UNICO JSON)
                 if raw_diet or raw_supp:
+                    # FIX: ISTRUZIONI ESPLICITE PER LA LINGUA ITALIANA E TARGET MULTIPLI
                     prompt_d = f"""Agisci come nutrizionista sportivo ITALIANO.
                     Analizza gli input e crea un piano nutrizionale.
                     
@@ -455,14 +456,14 @@ def coach_dashboard():
                     NOTE DEL COACH: {note_diet}.
                     
                     IMPORTANTE: 
-                    1. Usa SOLO ITALIANO. (Es: "Target Calorico", non "Target Calories").
-                    2. Dividi la dieta per GIORNI (es. Lunedì, Martedì) o usa "Giornata Tipo" se generico.
-                    3. Crea una lista separata per gli integratori.
+                    1. Usa SOLO ED ESCLUSIVAMENTE ITALIANO in tutti i campi (anche calorie, acqua, note).
+                    2. Se ci sono più target calorici (es. Training vs Rest), SCRIVILI TUTTI nel campo "daily_calories" (es: "2500 ON / 1900 OFF").
+                    3. Dividi la dieta per GIORNI (es. Lunedì, Martedì) se l'input lo richiede, altrimenti usa "Giornata Tipo".
                     
                     SCHEMA JSON OBBLIGATORIO:
                     {{
-                        "daily_calories": "es. 2500 kcal (ITALIANO)", 
-                        "water_intake": "es. 3-4 Litri (ITALIANO)", 
+                        "daily_calories": "stringa descrittiva completa (es. 2500 ON / 2000 OFF)", 
+                        "water_intake": "stringa descrittiva (es. 3-4 Litri)", 
                         "diet_note": "{note_diet}",
                         "days": [ 
                             {{ 
@@ -514,7 +515,7 @@ def coach_dashboard():
                         full_name,
                         st.session_state['coach_comment'],
                         json_w, # Colonna E: Scheda
-                        json_d  # Colonna F: Dieta + Integr
+                        json_d  # Colonna F: Dieta (con dentro Supp)
                     ])
                     st.success("INVIATA CORRETTAMENTE!")
                     st.session_state['generated_plan'] = None
