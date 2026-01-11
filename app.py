@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (SEMPLIFICATO E CORRETTO)
+# 2. MOTORE AI & IMMAGINI (CON SINONIMI FORZATI)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -120,94 +120,75 @@ def load_exercise_db():
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return ([], "DB/Query Vuota")
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
-    
-    # 1. CLEANING: Rimuove termini commerciali o inutili che confondono il DB
-    q = name_query.lower()
-    for bad_word in ["technogym", "panatta", "matrix", "convergent", "machine", "iso-lateral", "divergent"]:
-        q = q.replace(bad_word, "")
-    q = q.strip()
+    q = name_query.lower().strip()
 
-    # 2. DIZIONARIO "PONTE": Mappa i tuoi nomi a quelli GENERICI del DB
-    # Ho rimosso "lever" e "sled" perché limitavano troppo la ricerca
-    manual_map = {
-        "pec deck": "pec deck", # o "butterfly"
-        "reverse pec deck": "reverse fly", 
-        "chest press": "chest press", 
-        "incline dumbbell press": "dumbbell incline bench press",
-        "lateral raise": "dumbbell lateral raise",
-        "face pull": "face pull",
-        "lat pulldown": "pulldown", # Generico, prende tutto
-        "straight arm": "straight arm pulldown",
-        "cable row": "seated cable row",
-        "t-bar": "t-bar row",
-        "leg curl": "leg curl", # Generico
-        "lying leg curl": "lying leg curl",
-        "leg press": "leg press", # Generico, evita "sled"
-        "leg extension": "leg extension",
+    # --- 1. DIZIONARIO DEI SINONIMI (LA CURA DEFINITIVA) ---
+    # Se la query contiene la chiave, cerchiamo il valore (che è il nome vero nel DB)
+    synonyms = {
+        "pec deck": "butterfly", # IL FIX PER PEC DECK
+        "reverse pec deck": "reverse fly",
+        "pushdown": "pushdown", # Fix per il plurale/singolare
+        "triceps pushdown": "pushdown",
+        "t-bar": "t-bar", # Cercherà qualsiasi cosa con t-bar
+        "side plank": ["side plank", "side bridge"], # Prova entrambi
         "calf raise": "calf raise",
-        "hip adduction": "adductor", # Spesso si chiamano così
-        "hammer curl": "hammer curl",
-        "rope hammer": "rope hammer",
-        "pushdown": "pushdown",
-        "preacher curl": "preacher curl",
-        "overhead cable": "overhead triceps",
-        "reverse fly": "reverse fly",
-        "side plank": "side plank",
-        "plank": "plank",
-        "dead bug": "dead bug",
-        "vacuum": "stomach vacuum"
+        "leg curl": "leg curl",
+        "leg extension": "leg extension",
+        "leg press": "leg press",
+        "chest press": "chest press",
+        "lat pulldown": "pulldown",
+        "straight arm": "straight arm",
+        "face pull": "face pull",
+        "hyperextension": "hyperextension",
+        "vacuum": "vacuum",
+        "dead bug": "dead bug"
     }
 
-    # Se troviamo una chiave nel testo, usiamo il valore mappato come target
-    target_name = q
-    for k, v in manual_map.items():
-        if k in q:
-            target_name = v
-            break 
+    # Determina i termini di ricerca (può essere una lista)
+    search_terms = [q] # Default: cerca quello che hai scritto
+    
+    for key, val in synonyms.items():
+        if key in q:
+            if isinstance(val, list):
+                search_terms = val # Prova tutte le varianti
+            else:
+                search_terms = [val]
+            break
 
-    # 3. RICERCA FUZZY
+    # --- 2. RICERCA ITERATIVA SUI TERMINI ---
+    for term in search_terms:
+        # A. Cerca se il termine è contenuto nel nome del DB (Partial Match Sicuro)
+        candidates = []
+        for ex in db_exercises:
+            if term in ex['name'].lower():
+                candidates.append(ex)
+        
+        if candidates:
+            # Prende quello col nome più corto (di solito il fondamentale)
+            best = min(candidates, key=lambda x: len(x['name']))
+            return ([BASE_URL + i for i in best.get('images', [])], f"Synonym Match: '{term}' -> {best['name']}")
+
+    # --- 3. FALLBACK FUZZY (Se il dizionario fallisce) ---
     db_names = [x['name'] for x in db_exercises]
+    match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
     
-    # Cerca il miglior match
-    match = process.extractOne(target_name, db_names, scorer=fuzz.token_set_ratio)
-    
-    if match and match[1] > 60:
-        candidate_name = match[0].lower()
-        candidate_ex = next((x for x in db_exercises if x['name'] == match[0]), None)
+    if match and match[1] > 65:
+        # Filtro di sicurezza base
+        bad_words = ["press", "fly", "row", "curl", "squat", "deadlift"]
+        is_safe = True
+        cand_name = match[0].lower()
+        for w in bad_words:
+            if (w in q and w not in cand_name) or (w not in q and w in cand_name):
+                is_safe = False
+                # Eccezioni comuni
+                if "bench press" in cand_name and "chest press" in q: is_safe = True 
         
-        # 4. VALIDATORE (IL "Bouncer")
-        # Controlla che le parole chiave FONDAMENTALI siano presenti.
-        # Se cerco "Press", il risultato DEVE avere "Press".
-        # Se cerco "Fly", il risultato NON deve avere "Press".
-        
-        is_valid = True
-        
-        # Lista di parole che NON POSSONO ESSERE SCAMBIATE
-        critical_words = ["press", "fly", "curl", "row", "extension", "squat", "deadlift", "plank", "adductor", "abductor"]
-        
-        for word in critical_words:
-            # Se la parola è nella query MA NON nel risultato -> ERRORE (Es: cerco Chest Press, trovo Chest Fly -> NO)
-            if word in target_name and word not in candidate_name:
-                is_valid = False
-                break
-            # Se la parola è nel risultato MA NON nella query -> ERRORE (Es: cerco Squat, trovo Split Squat -> OK, ma cerco Fly trovo Press -> NO)
-            # Questo controllo è più lasco, lo usiamo solo per conflitti gravi
-            if word in candidate_name and word not in target_name:
-                # Eccezione: "Bench Press" contiene "Press", ma se cerco "Fly" non va bene.
-                # Gestiamo caso per caso o fidiamoci del fuzzy score alto
-                pass
+        if is_safe:
+            for ex in db_exercises:
+                if ex['name'] == match[0]:
+                    return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy: {match[0]} ({match[1]}%)")
 
-        # Validazione specifica per il Face Pull (che prima dava problemi)
-        if "face" in target_name and "face" not in candidate_name:
-            is_valid = False
-
-        if is_valid and candidate_ex:
-            imgs = [BASE_URL + img for img in candidate_ex.get('images', [])]
-            return (imgs, f"Match: {match[0]} ({match[1]}%)")
-        else:
-            return ([], f"Scartato: {match[0]} (Fallito check parole chiave)")
-
-    return ([], f"Nessun risultato per '{target_name}'")
+    return ([], f"Nessun risultato per '{q}'")
 
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
@@ -232,7 +213,7 @@ def render_preview_card(plan_json, show_debug=False):
             with st.container():
                 if show_debug:
                     debug_msg = ex.get('debug_info', 'N/A')
-                    color = "#ff4b4b" if "Nessun risultato" in debug_msg or "Scartato" in debug_msg else "#4ade80"
+                    color = "#ff4b4b" if "Nessun risultato" in debug_msg else "#4ade80"
                     st.markdown(f"<div class='debug-img' style='color:{color}'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
 
                 c1, c2 = st.columns([2, 3])
