@@ -498,32 +498,39 @@ def coach_dashboard():
                 else: st.session_state['generated_plan'] = None
 
                 # 2. DIETA (BLOCCATA SU TARGET E GIORNI ESATTI)
+                # 2. DIETA + INTEGRAZIONE (FIX MULTI-GIORNO + TARGET)
                 if raw_diet or raw_supp:
                     prompt_d = f"""
-                    Agisci come un assistente dati RIGIDO.
+                    Agisci come un nutrizionista sportivo ITALIANO.
                     
                     INPUT DIETA: {raw_diet if raw_diet else 'Nessuna'}. 
                     INPUT INTEGRAZIONE: {raw_supp if raw_supp else 'Nessuna'}.
                     NOTE DEL COACH: {note_diet}.
                     
-                    ISTRUZIONI TASSATIVE:
-                    1. LINGUA: Solo ITALIANO.
-                    2. CALORIE: Copia TUTTA la frase delle calorie dall'input. Se c'è scritto "2300 ON / 1900 OFF", scrivi esattamente quello. NON riassumere.
-                    3. GIORNI: Usa ESATTAMENTE i nomi dei giorni scritti dall'utente (es. "Giorno Training", "Giorno Rest", "Lunedì"). NON inventare "Lunedì" se l'utente ha scritto "Training Day".
+                    ISTRUZIONI CRITICHE (DA RISPETTARE ALLA LETTERA):
+                    1. LINGUA: Usa SOLO ITALIANO.
+                    2. CALORIE: Copia TUTTA la stringa dei target calorici (es. "2300 Training / 1900 Rest"). NON tagliarla.
+                    3. GIORNI MULTIPLI: Se l'input contiene più tipologie di giorni (es. "Training Day" e "Rest Day", oppure "Lunedì", "Martedì"...), DEVI creare un elemento nell'array 'days' PER OGNUNO DI ESSI. 
+                       NON limitarti al primo giorno. Scrivi tutti i giorni presenti nell'input.
+                    4. NOMI GIORNI: Usa ESATTAMENTE i nomi scritti dall'utente (es. "Training Day"). NON inventare "Lunedì" se non è scritto.
                     
-                    SCHEMA JSON:
+                    SCHEMA JSON OBBLIGATORIO:
                     {{
-                        "daily_calories": "Copia esatta dell'input calorico", 
-                        "water_intake": "Copia esatta dell'input acqua", 
+                        "daily_calories": "Copia esatta della stringa target (es. 2300 ON / 1900 OFF)", 
+                        "water_intake": "es. 3-4 Litri", 
                         "diet_note": "{note_diet}",
                         "days": [ 
                             {{ 
-                                "day_name": "Nome esatto dal testo utente (es. Training Day)", 
+                                "day_name": "Nome Giorno 1 (es. Training Day)", 
                                 "meals": [ {{ "name": "Colazione", "foods": ["..."], "notes": "..." }} ] 
-                            }} 
+                            }},
+                            {{ 
+                                "day_name": "Nome Giorno 2 (es. Rest Day) - SE PRESENTE", 
+                                "meals": [ {{ "name": "Colazione", "foods": ["..."], "notes": "..." }} ] 
+                            }}
                         ],
                         "supplements": [ 
-                            {{ "name": "Nome", "dose": "...", "timing": "...", "notes": "..." }} 
+                            {{ "name": "Creatina", "dose": "5g", "timing": "Post Workout", "notes": "..." }} 
                         ]
                     }}
                     """
@@ -533,9 +540,6 @@ def coach_dashboard():
                         st.session_state['generated_diet'] = diet_json
                     except: st.error("Errore AI Dieta/Supp")
                 else: st.session_state['generated_diet'] = None
-                
-                st.session_state['coach_comment'] = comment_input
-                st.rerun()
 
         # --- ANTEPRIMA ---
         if st.session_state.get('generated_plan') or st.session_state.get('generated_diet'):
@@ -632,6 +636,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
