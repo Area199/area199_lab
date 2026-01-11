@@ -161,8 +161,6 @@ def find_exercise_images(name_query, db_exercises):
         "lateral raise": "lateral raise",
         
         # BRACCIA (FIX QUI SOTTO)
-        "rope hammer": "Cable Hammer Curls - Rope Attachment", # <--- ECCOLO! NOME ESATTO DEL DB
-        "hammer curl": "hammer curl", # Generico (va dopo perché più corto)
         "pushdown": "pushdown",
         "triceps pushdown": "pushdown",
         "preacher curl": "preacher curl",
@@ -634,5 +632,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
