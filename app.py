@@ -323,12 +323,17 @@ def render_diet_card(diet_json):
 # 4. DASHBOARD COACH
 # ==============================================================================
 
+# ==============================================================================
+# 4. DASHBOARD COACH (AGGIORNATA CON PROMPT RIGOROSI IN ITALIANO)
+# ==============================================================================
+
 def coach_dashboard():
     client = get_client()
     ex_db = load_exercise_db()
     
     st.title("DASHBOARD COACH")
 
+    # BROWSER ESERCIZI (Resta uguale)
     with st.expander("🔎 BROWSER DATABASE ESERCIZI", expanded=True):
         c1, c2 = st.columns([3, 1])
         with c1:
@@ -358,6 +363,7 @@ def coach_dashboard():
     
     st.divider()
 
+    # SELEZIONE ATLETA
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
         raw_emails = [str(r.get('E-mail') or r.get('Email')).strip().lower() for r in sh_ana.get_all_records()]
@@ -412,7 +418,7 @@ def coach_dashboard():
             c_diet, c_supp = st.columns(2)
             with c_diet:
                 st.markdown("#### 1. CIBO")
-                raw_diet = st.text_area("Lista Pasti", height=300, key="input_raw_diet", placeholder="Training Day: Colazione...\nRest Day: ...")
+                raw_diet = st.text_area("Lista Pasti", height=300, key="input_raw_diet", placeholder="Lunedì: Colazione...")
             with c_supp:
                 st.markdown("#### 2. INTEGRAZIONE")
                 raw_supp = st.text_area("Lista Integratori", height=300, key="input_raw_supp", placeholder="Creatina 5g...")
@@ -427,10 +433,42 @@ def coach_dashboard():
             with st.spinner("Elaborazione..."):
                 client_ai = openai.Client(api_key=st.secrets["openai_key"])
                 
-                # 1. WORKOUT
+                # --- QUI C'È LA MODIFICA FONDAMENTALE (PROMPT CORRETTO) ---
+                
+                # 1. WORKOUT (BLOCCATO IN ITALIANO)
                 if raw_workout:
-                    prompt_w = f"""Agisci come parser JSON. INPUT: {raw_workout}. NOTE: {note_workout}.
-                    SCHEMA: {{"sessions": [{{"name": "...", "exercises": [{{"name": "...", "search_name": "...", "details": "...", "note": "..."}}]}}], "note_coach": "{note_workout}"}}"""
+                    prompt_w = f"""
+                    Agisci come un parser JSON "FOTOCOPIATRICE".
+                    
+                    INPUT UTENTE:
+                    {raw_workout}
+                    
+                    NOTE COACH:
+                    {note_workout}
+                    
+                    REGOLA SUPREMA: NON TRADURRE NULLA.
+                    Se l'input è in Italiano, l'output DEVE ESSERE IN ITALIANO.
+                    Copia 'details' e 'note' ESATTAMENTE come scritti dall'utente, parola per parola.
+                    Solo 'search_name' deve essere in inglese per il database immagini.
+                    
+                    SCHEMA JSON:
+                    {{
+                        "sessions": [
+                            {{
+                                "name": "Nome Sessione",
+                                "exercises": [
+                                    {{
+                                        "name": "Nome Esercizio (Originale)",
+                                        "search_name": "Nome in Inglese (Solo per ricerca)",
+                                        "details": "Dettagli (COPIA ESATTA DALL'INPUT)",
+                                        "note": "Note (COPIA ESATTA DALL'INPUT)"
+                                    }}
+                                ]
+                            }}
+                        ],
+                        "note_coach": "{note_workout}"
+                    }}
+                    """
                     try:
                         res_w = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt_w}])
                         clean_w = clean_json_response(res_w.choices[0].message.content)
@@ -445,34 +483,33 @@ def coach_dashboard():
                     except: st.error("Errore AI Workout")
                 else: st.session_state['generated_plan'] = None
 
-                # 2. DIETA + INTEGRAZIONE (STRICT PARSING)
+                # 2. DIETA (BLOCCATA SU TARGET E GIORNI ESATTI)
                 if raw_diet or raw_supp:
-                    prompt_d = f"""Agisci come nutrizionista sportivo ITALIANO.
+                    prompt_d = f"""
+                    Agisci come un assistente dati RIGIDO.
                     
                     INPUT DIETA: {raw_diet if raw_diet else 'Nessuna'}. 
                     INPUT INTEGRAZIONE: {raw_supp if raw_supp else 'Nessuna'}.
                     NOTE DEL COACH: {note_diet}.
                     
-                    ISTRUZIONI CRITICHE (DA RISPETTARE ALLA LETTERA):
-                    1. LINGUA: Usa SOLO ITALIANO.
-                    2. TARGET CALORICI: Se l'input contiene target diversi (es. "2300 Training / 1900 Rest"), SCRIVILI TUTTI nel campo 'daily_calories'. COPIA ESATTAMENTE L'INPUT CALORICO. Non tagliarlo.
-                    3. STRUTTURA GIORNI: Usa ESATTAMENTE i nomi dei giorni o delle tipologie indicate nell'input (es. "Training Day", "Rest Day"). 
-                       NON inventare giorni della settimana (Lunedì, Martedì) se non sono scritti esplicitamente.
-                       Se l'input non specifica giorni, usa "Giornata Tipo".
+                    ISTRUZIONI TASSATIVE:
+                    1. LINGUA: Solo ITALIANO.
+                    2. CALORIE: Copia TUTTA la frase delle calorie dall'input. Se c'è scritto "2300 ON / 1900 OFF", scrivi esattamente quello. NON riassumere.
+                    3. GIORNI: Usa ESATTAMENTE i nomi dei giorni scritti dall'utente (es. "Giorno Training", "Giorno Rest", "Lunedì"). NON inventare "Lunedì" se l'utente ha scritto "Training Day".
                     
-                    SCHEMA JSON OBBLIGATORIO:
+                    SCHEMA JSON:
                     {{
-                        "daily_calories": "Copia qui TUTTA la stringa dei target calorici (es. 2300 Training / 1900 Rest)", 
-                        "water_intake": "es. 3-4 Litri", 
+                        "daily_calories": "Copia esatta dell'input calorico", 
+                        "water_intake": "Copia esatta dell'input acqua", 
                         "diet_note": "{note_diet}",
                         "days": [ 
                             {{ 
-                                "day_name": "Usa il nome esatto dell'input (es. Training Day)", 
-                                "meals": [ {{ "name": "Colazione", "foods": ["Uova", "Pane"], "notes": "..." }} ] 
+                                "day_name": "Nome esatto dal testo utente (es. Training Day)", 
+                                "meals": [ {{ "name": "Colazione", "foods": ["..."], "notes": "..." }} ] 
                             }} 
                         ],
                         "supplements": [ 
-                            {{ "name": "Creatina", "dose": "5g", "timing": "Post Workout", "notes": "..." }} 
+                            {{ "name": "Nome", "dose": "...", "timing": "...", "notes": "..." }} 
                         ]
                     }}
                     """
@@ -508,14 +545,14 @@ def coach_dashboard():
                     json_w = json.dumps(st.session_state['generated_plan']) if st.session_state['generated_plan'] else ""
                     json_d = json.dumps(st.session_state['generated_diet']) if st.session_state['generated_diet'] else ""
                     
-                    # SALVA SU COLONNE E ed F
+                    # SALVA
                     db.append_row([
                         datetime.now().strftime("%Y-%m-%d"),
                         sel_email,
                         full_name,
                         st.session_state['coach_comment'],
-                        json_w, # Colonna E: Scheda
-                        json_d  # Colonna F: Dieta (con dentro Supp)
+                        json_w, 
+                        json_d  
                     ])
                     st.success("INVIATA CORRETTAMENTE!")
                     st.session_state['generated_plan'] = None
@@ -581,3 +618,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
