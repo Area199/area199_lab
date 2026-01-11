@@ -135,7 +135,9 @@ def find_exercise_images(name_query, db_exercises):
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     q = name_query.lower().strip()
 
+    # --- 1. DIZIONARIO DEI SINONIMI (AGGIORNATO CON FIX ROPE HAMMER) ---
     synonyms = {
+        # GAMBE
         "lying leg curl": "lying leg curls",
         "leg curl": "lying leg curls",
         "leg extension": "leg extensions",
@@ -143,22 +145,30 @@ def find_exercise_images(name_query, db_exercises):
         "calf raise": "calf raise",
         "hip adduction": "adductor",
         "adduction": "adductor",
+        
+        # SCHIENA
         "reverse pec deck": "reverse fly",
         "t-bar": "t-bar",
         "lat pulldown": "pulldown",
         "straight arm": "straight-arm pulldown",
         "cable row": "seated cable row",
         "hyperextension": "hyperextension",
+        
+        # PETTO / SPALLE
         "pec deck": "butterfly",
         "chest press": "chest press",
         "face pull": "face pull",
         "lateral raise": "lateral raise",
+        
+        # BRACCIA (FIX QUI SOTTO)
+        "rope hammer": "Cable Hammer Curls - Rope Attachment", # <--- ECCOLO! NOME ESATTO DEL DB
+        "hammer curl": "hammer curl", # Generico (va dopo perché più corto)
         "pushdown": "pushdown",
         "triceps pushdown": "pushdown",
-        "hammer curl": "hammer curl",
-        "rope hammer": "rope hammer",
         "preacher curl": "preacher curl",
         "overhead cable": "overhead triceps",
+        
+        # CORE
         "side plank": ["side plank", "side bridge"],
         "plank": "plank",
         "dead bug": "dead bug",
@@ -166,6 +176,9 @@ def find_exercise_images(name_query, db_exercises):
     }
 
     search_terms = [q] 
+    
+    # Cerca la chiave più lunga che matcha (per priorità)
+    # Esempio: se scrivi "Rope Hammer", trova prima "rope hammer" e ignora "hammer curl"
     for key in sorted(synonyms.keys(), key=len, reverse=True):
         if key in q:
             val = synonyms[key]
@@ -173,15 +186,18 @@ def find_exercise_images(name_query, db_exercises):
             else: search_terms = [val]
             break
 
+    # --- 2. RICERCA ---
     for term in search_terms:
         candidates = []
         for ex in db_exercises:
-            if term in ex['name'].lower():
+            if term.lower() in ex['name'].lower():
                 candidates.append(ex)
         if candidates:
+            # Se trova il match esatto con il nome lungo, prende quello
             best = min(candidates, key=lambda x: len(x['name']))
             return ([BASE_URL + i for i in best.get('images', [])], f"Synonym: '{term}' -> {best['name']}")
 
+    # --- 3. FALLBACK FUZZY ---
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
     
@@ -618,4 +634,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
