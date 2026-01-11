@@ -122,35 +122,13 @@ def get_full_history(email):
 # ==============================================================================
 @st.cache_data(ttl=3600)
 def load_exercise_db():
-    try:
-        # 1. Si connette a Google Sheets
-        client = get_client()
-        # 2. Apre il TUO foglio (Assicurati che il nome sia GIUSTO)
-        sh = client.open("AREA199_DB").worksheet("DB_ESERCIZI")
-        data = sh.get_all_records()
-        
-        # 3. Converte i dati del foglio nel formato che piace al programma
-        formatted_db = []
-        for row in data:
-            imgs = []
-            # Prende le foto dalle colonne (se ci sono)
-            if row.get('Immagine_1'): imgs.append(row['Immagine_1'])
-            if row.get('Immagine_2'): imgs.append(row['Immagine_2'])
-            
-            # Aggiunge alla lista
-            formatted_db.append({
-                'name': str(row.get('Nome', '')), # Prende la colonna 'Nome'
-                'images': imgs
-            })
-            
-        # 4. Ordina dalla A alla Z
-        return sorted(formatted_db, key=lambda x: x['name'])
-        
-    except Exception as e:
-        # Se qualcosa va storto (es. foglio non trovato), non rompe tutto ma avvisa
-        st.error(f"Errore caricamento Database Personale: {e}")
+    try: 
+        resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=20)
+        if resp.status_code == 200:
+            data = resp.json()
+            return sorted(data, key=lambda x: x['name'])
         return []
-
+    except: return []
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return ([], "DB/Query Vuota")
@@ -658,7 +636,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
 
