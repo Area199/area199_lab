@@ -122,30 +122,47 @@ def find_exercise_images(name_query, db_exercises):
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     q = name_query.lower().strip()
 
-    # --- 1. DIZIONARIO DEI SINONIMI (ORDINE IMPORTANTE: Specifici prima dei Generici) ---
+   # --- 1. DIZIONARIO DEI SINONIMI (Fix Lying Leg Curls) ---
     synonyms = {
-        "reverse pec deck": "reverse fly", # Specifico (deve stare PRIMA di pec deck)
-        "pec deck": "butterfly", # Generico
-        "straight arm": "straight-arm pulldown", # Col trattino
+        # GAMBE
+        "lying leg curl": "lying leg curls",  # <--- CORRETTO CON 'S' FINALE
+        "leg curl": "lying leg curls",        # Default su lying
+        "leg extension": "leg extensions",    # Spesso è plurale
+        "leg press": "leg press",
+        "calf raise": "calf raise",
         "hip adduction": "adductor",
         "adduction": "adductor",
+        
+        # SCHIENA
+        "reverse pec deck": "reverse fly",
+        "t-bar": "t-bar",
+        "lat pulldown": "pulldown",
+        "straight arm": "straight-arm pulldown",
+        "cable row": "seated cable row",
+        "hyperextension": "hyperextension",
+        
+        # PETTO / SPALLE
+        "pec deck": "butterfly",
+        "chest press": "chest press",
+        "face pull": "face pull",
+        "lateral raise": "lateral raise",
+        
+        # BRACCIA
         "pushdown": "pushdown",
         "triceps pushdown": "pushdown",
-        "t-bar": "t-bar",
+        "hammer curl": "hammer curl",
+        "rope hammer": "rope hammer",
+        "preacher curl": "preacher curl",
+        "overhead cable": "overhead triceps",
+        
+        # CORE
         "side plank": ["side plank", "side bridge"],
-        "calf raise": "calf raise",
-        "leg curl": "leg curl",
-        "leg extension": "leg extension",
-        "leg press": "leg press",
-        "chest press": "chest press",
-        "lat pulldown": "pulldown",
-        "face pull": "face pull",
-        "hyperextension": "hyperextension",
-        "vacuum": "vacuum",
-        "dead bug": "dead bug"
+        "plank": "plank",
+        "dead bug": "dead bug",
+        "vacuum": "stomach vacuum"
     }
 
-    search_terms = [q] 
+    search_terms = [q]
     
     # Cerca la chiave più lunga che matcha (per evitare che "pec deck" sovrascriva "reverse pec deck")
     for key in sorted(synonyms.keys(), key=len, reverse=True):
@@ -414,3 +431,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
