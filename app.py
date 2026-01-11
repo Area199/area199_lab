@@ -118,10 +118,11 @@ def get_full_history(email):
 @st.cache_data(ttl=3600) # Scade ogni ora
 def load_exercise_db():
     try: 
-        resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=15)
+        # Timeout aumentato per connessioni lente
+        resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=20)
         if resp.status_code == 200:
             data = resp.json()
-            return sorted(data, key=lambda x: x['name'])
+            return sorted(data, key=lambda x: x['name']) # Ordina alfabeticamente
         return []
     except: return []
 
@@ -229,7 +230,9 @@ def render_preview_card(plan_json, show_debug=False):
                 with c1:
                     if ex.get('images'):
                         cols_img = st.columns(2)
-                        cols_img[0].image(ex['images'][0], use_container_width=True)
+                        # Mostra fino a 2 immagini (Start/End)
+                        if len(ex['images']) > 0:
+                            cols_img[0].image(ex['images'][0], use_container_width=True)
                         if len(ex['images']) > 1:
                             cols_img[1].image(ex['images'][1], use_container_width=True)
                     else:
@@ -259,36 +262,48 @@ def coach_dashboard():
     # =================================================================
     with st.expander("🔎 BROWSER DATABASE ESERCIZI (Trova il nome esatto)", expanded=True):
         
+        # --- SEZIONE INFO DATABASE (RANGE A-Z) ---
         c1, c2 = st.columns([3, 1])
         with c1:
-            db_len = len(ex_db)
-            st.write(f"📊 **Database:** {db_len} esercizi.")
-            if db_len < 800:
-                st.error("⚠️ DATABASE INCOMPLETO! Premi il tasto rosso.")
+            if ex_db and len(ex_db) > 0:
+                first_ex = ex_db[0]['name']
+                last_ex = ex_db[-1]['name']
+                st.info(f"📚 **Database Caricato:** {len(ex_db)} esercizi.\n\n"
+                        f"🔤 **Copertura Alfabetica:** da **{first_ex}** a **{last_ex}**")
+                
+                # Controllo integrità
+                if last_ex.upper()[0] < 'R': # Se finisce prima della R, è sospetto
+                    st.error("⚠️ ATTENZIONE: Il Database sembra incompleto! Premi 'FORZA RESET DB'.")
             else:
-                st.success("✅ Database OK")
+                st.error("⚠️ Database Vuoto o Errore Connessione.")
 
         with c2:
             if st.button("🧨 FORZA RESET DB", type="primary"):
                 st.cache_data.clear()
                 st.rerun()
 
-        st.info("Scrivi qui sotto il nome dell'esercizio per vedere le FOTO e il NOME ESATTO da copiare nella scheda.")
-        search_term = st.text_input("Cerca esercizio (es. 'plank', 'chest', 'leg press')")
+        st.markdown("---")
+        st.write("Scrivi parte del nome (es. 'press', 'curl') per vedere TUTTI i risultati e le immagini.")
+        
+        search_term = st.text_input("Cerca esercizio:", placeholder="Es: leg curl")
         
         if search_term and len(search_term) > 2:
+            # Filtro "Contiene" (Case Insensitive)
             results = [x for x in ex_db if search_term.lower() in x['name'].lower()]
+            
             if results:
-                st.write(f"Trovati {len(results)} esercizi:")
+                st.write(f"Trovati {len(results)} risultati:")
                 cols_db = st.columns(4)
-                for idx, res in enumerate(results[:20]):
+                for idx, res in enumerate(results[:24]): # Mostra fino a 24 risultati
                     with cols_db[idx % 4]:
                         st.markdown(f"**{res['name']}**")
+                        # MOSTRA TUTTE LE IMMAGINI (Non solo la prima)
                         if res.get('images'):
-                            st.image("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/" + res['images'][0], use_container_width=True)
+                            for img_path in res['images']:
+                                st.image("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/" + img_path, use_container_width=True)
                         st.code(res['name'], language=None)
             else:
-                st.warning("Nessun esercizio trovato.")
+                st.warning("Nessun esercizio trovato con questo nome.")
     
     st.divider()
 
