@@ -412,7 +412,7 @@ def coach_dashboard():
             c_diet, c_supp = st.columns(2)
             with c_diet:
                 st.markdown("#### 1. CIBO")
-                raw_diet = st.text_area("Lista Pasti", height=300, key="input_raw_diet", placeholder="Lunedì: Colazione...")
+                raw_diet = st.text_area("Lista Pasti", height=300, key="input_raw_diet", placeholder="Training Day: Colazione...\nRest Day: ...")
             with c_supp:
                 st.markdown("#### 2. INTEGRAZIONE")
                 raw_supp = st.text_area("Lista Integratori", height=300, key="input_raw_supp", placeholder="Creatina 5g...")
@@ -445,29 +445,29 @@ def coach_dashboard():
                     except: st.error("Errore AI Workout")
                 else: st.session_state['generated_plan'] = None
 
-                # 2. DIETA + INTEGRAZIONE (MERGE IN UNICO JSON)
+                # 2. DIETA + INTEGRAZIONE (STRICT PARSING)
                 if raw_diet or raw_supp:
-                    # FIX: ISTRUZIONI ESPLICITE PER LA LINGUA ITALIANA E TARGET MULTIPLI
                     prompt_d = f"""Agisci come nutrizionista sportivo ITALIANO.
-                    Analizza gli input e crea un piano nutrizionale.
                     
                     INPUT DIETA: {raw_diet if raw_diet else 'Nessuna'}. 
                     INPUT INTEGRAZIONE: {raw_supp if raw_supp else 'Nessuna'}.
                     NOTE DEL COACH: {note_diet}.
                     
-                    IMPORTANTE: 
-                    1. Usa SOLO ED ESCLUSIVAMENTE ITALIANO in tutti i campi (anche calorie, acqua, note).
-                    2. Se ci sono più target calorici (es. Training vs Rest), SCRIVILI TUTTI nel campo "daily_calories" (es: "2500 ON / 1900 OFF").
-                    3. Dividi la dieta per GIORNI (es. Lunedì, Martedì) se l'input lo richiede, altrimenti usa "Giornata Tipo".
+                    ISTRUZIONI CRITICHE (DA RISPETTARE ALLA LETTERA):
+                    1. LINGUA: Usa SOLO ITALIANO.
+                    2. TARGET CALORICI: Se l'input contiene target diversi (es. "2300 Training / 1900 Rest"), SCRIVILI TUTTI nel campo 'daily_calories'. COPIA ESATTAMENTE L'INPUT CALORICO. Non tagliarlo.
+                    3. STRUTTURA GIORNI: Usa ESATTAMENTE i nomi dei giorni o delle tipologie indicate nell'input (es. "Training Day", "Rest Day"). 
+                       NON inventare giorni della settimana (Lunedì, Martedì) se non sono scritti esplicitamente.
+                       Se l'input non specifica giorni, usa "Giornata Tipo".
                     
                     SCHEMA JSON OBBLIGATORIO:
                     {{
-                        "daily_calories": "stringa descrittiva completa (es. 2500 ON / 2000 OFF)", 
-                        "water_intake": "stringa descrittiva (es. 3-4 Litri)", 
+                        "daily_calories": "Copia qui TUTTA la stringa dei target calorici (es. 2300 Training / 1900 Rest)", 
+                        "water_intake": "es. 3-4 Litri", 
                         "diet_note": "{note_diet}",
                         "days": [ 
                             {{ 
-                                "day_name": "Lunedì", 
+                                "day_name": "Usa il nome esatto dell'input (es. Training Day)", 
                                 "meals": [ {{ "name": "Colazione", "foods": ["Uova", "Pane"], "notes": "..." }} ] 
                             }} 
                         ],
