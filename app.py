@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (CON SINONIMI FORZATI)
+# 2. MOTORE AI & IMMAGINI (CORRETTO DEFINITIVO)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -122,65 +122,62 @@ def find_exercise_images(name_query, db_exercises):
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     q = name_query.lower().strip()
 
-    # --- 1. DIZIONARIO DEI SINONIMI (LA CURA DEFINITIVA) ---
-    # Se la query contiene la chiave, cerchiamo il valore (che è il nome vero nel DB)
+    # --- 1. DIZIONARIO DEI SINONIMI (ORDINE IMPORTANTE: Specifici prima dei Generici) ---
     synonyms = {
-        "pec deck": "butterfly", # IL FIX PER PEC DECK
-        "reverse pec deck": "reverse fly",
-        "pushdown": "pushdown", # Fix per il plurale/singolare
+        "reverse pec deck": "reverse fly", # Specifico (deve stare PRIMA di pec deck)
+        "pec deck": "butterfly", # Generico
+        "straight arm": "straight-arm pulldown", # Col trattino
+        "hip adduction": "adductor",
+        "adduction": "adductor",
+        "pushdown": "pushdown",
         "triceps pushdown": "pushdown",
-        "t-bar": "t-bar", # Cercherà qualsiasi cosa con t-bar
-        "side plank": ["side plank", "side bridge"], # Prova entrambi
+        "t-bar": "t-bar",
+        "side plank": ["side plank", "side bridge"],
         "calf raise": "calf raise",
         "leg curl": "leg curl",
         "leg extension": "leg extension",
         "leg press": "leg press",
         "chest press": "chest press",
         "lat pulldown": "pulldown",
-        "straight arm": "straight arm",
         "face pull": "face pull",
         "hyperextension": "hyperextension",
         "vacuum": "vacuum",
         "dead bug": "dead bug"
     }
 
-    # Determina i termini di ricerca (può essere una lista)
-    search_terms = [q] # Default: cerca quello che hai scritto
+    search_terms = [q] 
     
-    for key, val in synonyms.items():
+    # Cerca la chiave più lunga che matcha (per evitare che "pec deck" sovrascriva "reverse pec deck")
+    for key in sorted(synonyms.keys(), key=len, reverse=True):
         if key in q:
-            if isinstance(val, list):
-                search_terms = val # Prova tutte le varianti
-            else:
-                search_terms = [val]
-            break
+            val = synonyms[key]
+            if isinstance(val, list): search_terms = val
+            else: search_terms = [val]
+            break # Trovato il match più specifico, stop
 
-    # --- 2. RICERCA ITERATIVA SUI TERMINI ---
+    # --- 2. RICERCA ---
     for term in search_terms:
-        # A. Cerca se il termine è contenuto nel nome del DB (Partial Match Sicuro)
         candidates = []
         for ex in db_exercises:
             if term in ex['name'].lower():
                 candidates.append(ex)
         
         if candidates:
-            # Prende quello col nome più corto (di solito il fondamentale)
             best = min(candidates, key=lambda x: len(x['name']))
-            return ([BASE_URL + i for i in best.get('images', [])], f"Synonym Match: '{term}' -> {best['name']}")
+            return ([BASE_URL + i for i in best.get('images', [])], f"Synonym: '{term}' -> {best['name']}")
 
-    # --- 3. FALLBACK FUZZY (Se il dizionario fallisce) ---
+    # --- 3. FALLBACK ---
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
     
     if match and match[1] > 65:
-        # Filtro di sicurezza base
+        # Filtro sicurezza
         bad_words = ["press", "fly", "row", "curl", "squat", "deadlift"]
         is_safe = True
         cand_name = match[0].lower()
         for w in bad_words:
             if (w in q and w not in cand_name) or (w not in q and w in cand_name):
                 is_safe = False
-                # Eccezioni comuni
                 if "bench press" in cand_name and "chest press" in q: is_safe = True 
         
         if is_safe:
