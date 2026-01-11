@@ -31,6 +31,9 @@ st.markdown("""
     .exercise-note { color: #888; font-style: italic; font-size: 0.9em; border-left: 2px solid #E20613; padding-left: 10px; margin-top: 5px; }
     
     .debug-img { font-size: 0.7em; color: #ffcc00; font-family: monospace; background: #222; padding: 2px 5px; margin-bottom: 5px; display: inline-block; }
+    
+    /* Stile per il box di ricerca immagini */
+    .streamlit-expanderHeader { background-color: #222 !important; color: #E20613 !important; font-weight: bold !important; border: 1px solid #E20613; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,11 +118,10 @@ def get_full_history(email):
 @st.cache_data(ttl=3600) # Scade ogni ora
 def load_exercise_db():
     try: 
-        # Timeout aumentato per connessioni lente
-        resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=10)
+        resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=15)
         if resp.status_code == 200:
             data = resp.json()
-            return sorted(data, key=lambda x: x['name']) # Ordina alfabeticamente
+            return sorted(data, key=lambda x: x['name'])
         return []
     except: return []
 
@@ -250,6 +252,47 @@ def coach_dashboard():
     client = get_client()
     ex_db = load_exercise_db()
     
+    st.title("DASHBOARD COACH")
+
+    # =================================================================
+    # --- BOX DI RICERCA SPOSTATO IN CIMA (SEMPRE VISIBILE) ---
+    # =================================================================
+    with st.expander("🔎 BROWSER DATABASE ESERCIZI (Trova il nome esatto)", expanded=True):
+        
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            db_len = len(ex_db)
+            st.write(f"📊 **Database:** {db_len} esercizi.")
+            if db_len < 800:
+                st.error("⚠️ DATABASE INCOMPLETO! Premi il tasto rosso.")
+            else:
+                st.success("✅ Database OK")
+
+        with c2:
+            if st.button("🧨 FORZA RESET DB", type="primary"):
+                st.cache_data.clear()
+                st.rerun()
+
+        st.info("Scrivi qui sotto il nome dell'esercizio per vedere le FOTO e il NOME ESATTO da copiare nella scheda.")
+        search_term = st.text_input("Cerca esercizio (es. 'plank', 'chest', 'leg press')")
+        
+        if search_term and len(search_term) > 2:
+            results = [x for x in ex_db if search_term.lower() in x['name'].lower()]
+            if results:
+                st.write(f"Trovati {len(results)} esercizi:")
+                cols_db = st.columns(4)
+                for idx, res in enumerate(results[:20]):
+                    with cols_db[idx % 4]:
+                        st.markdown(f"**{res['name']}**")
+                        if res.get('images'):
+                            st.image("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/" + res['images'][0], use_container_width=True)
+                        st.code(res['name'], language=None)
+            else:
+                st.warning("Nessun esercizio trovato.")
+    
+    st.divider()
+
+    # --- SELEZIONE ATLETA E RESTO DEL PROGRAMMA ---
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
         raw_emails = [str(r.get('E-mail') or r.get('Email')).strip().lower() for r in sh_ana.get_all_records()]
@@ -265,51 +308,6 @@ def coach_dashboard():
             st.session_state['coach_comment'] = ""
 
         history = get_full_history(sel_email)
-        
-        # --- BROWSER DATABASE POTENZIATO ---
-        with st.expander("🔎 BROWSER DATABASE ESERCIZI (Trova il nome esatto)"):
-            
-            # STATISTICHE DB
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                db_len = len(ex_db)
-                st.write(f"📊 **Stato Database:** {db_len} esercizi caricati.")
-                if db_len > 0:
-                    st.caption(f"Primo: {ex_db[0]['name']} | Ultimo: {ex_db[-1]['name']}")
-                
-                if db_len < 800:
-                    st.error("⚠️ DATABASE CORROTTO O INCOMPLETO (Si ferma alla O?)")
-                    st.write("Premi il tasto rosso qui a fianco per forzare il riscaricamento.")
-                else:
-                    st.success("✅ Database Completo (A-Z)")
-
-            with c2:
-                if st.button("🧨 FORZA RESET TOTALE", type="primary"):
-                    st.cache_data.clear() # Cancella la cache corrotta
-                    st.rerun() # Riavvia l'app
-
-            st.divider()
-            
-            st.info("Scrivi qui sotto il nome dell'esercizio per vedere le FOTO e il NOME ESATTO da usare.")
-            search_term = st.text_input("Cerca esercizio (es. 'plank', 'chest', 'leg press')")
-            
-            if search_term and len(search_term) > 2:
-                # Cerca nel DB
-                results = [x for x in ex_db if search_term.lower() in x['name'].lower()]
-                
-                if results:
-                    st.write(f"Trovati {len(results)} esercizi:")
-                    cols_db = st.columns(4) # Griglia da 4
-                    for idx, res in enumerate(results[:20]): # Mostra max 20 risultati
-                        with cols_db[idx % 4]:
-                            st.markdown(f"**{res['name']}**")
-                            if res.get('images'):
-                                st.image("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/" + res['images'][0], use_container_width=True)
-                            st.code(res['name'], language=None) # Facile da copiare
-                else:
-                    st.warning("Nessun esercizio trovato. Prova con una parola più semplice (es. 'press' invece di 'incline press').")
-
-        st.divider()
         st.header(f"Analisi: {sel_email}")
         
         if not history:
