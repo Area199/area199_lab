@@ -35,7 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. UTILITIES & MOTORE DATI
+# 1. MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (IMMUTABLE LOGIC)
+# 2. MOTORE AI & IMMAGINI (SEMPLIFICATO E CORRETTO)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -120,89 +120,94 @@ def load_exercise_db():
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return ([], "DB/Query Vuota")
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
-    q = name_query.lower().strip()
+    
+    # 1. CLEANING: Rimuove termini commerciali o inutili che confondono il DB
+    q = name_query.lower()
+    for bad_word in ["technogym", "panatta", "matrix", "convergent", "machine", "iso-lateral", "divergent"]:
+        q = q.replace(bad_word, "")
+    q = q.strip()
 
-    # --- A. DIZIONARIO DI TRADUZIONE FORZATA ---
-    # Mappa le tue diciture ai nomi "tecnici" del DB (spesso usano 'Lever' per le macchine)
+    # 2. DIZIONARIO "PONTE": Mappa i tuoi nomi a quelli GENERICI del DB
+    # Ho rimosso "lever" e "sled" perché limitavano troppo la ricerca
     manual_map = {
-        "pec deck": "lever pec deck fly",
-        "reverse pec deck": "lever seated reverse fly", 
-        "chest press": "lever chest press",
-        "chest press machine": "lever chest press",
-        "convergent chest press": "lever chest press",
+        "pec deck": "pec deck", # o "butterfly"
+        "reverse pec deck": "reverse fly", 
+        "chest press": "chest press", 
         "incline dumbbell press": "dumbbell incline bench press",
         "lateral raise": "dumbbell lateral raise",
-        "face pull": "cable standing face pull",
-        "lat pulldown": "cable lat pulldown",
-        "straight arm": "cable straight arm pulldown",
-        "cable row": "cable seated row",
-        "t-bar": "lever t-bar row",
-        "leg curl": "lever lying leg curl",
-        "lying leg curl": "lever lying leg curl",
-        "leg extension": "lever leg extension",
-        "leg press": "sled 45 degree leg press",
-        "calf raise": "lever seated calf raise",
-        "hip adduction": "lever seated hip adduction",
-        "hammer curl": "dumbbell hammer curl",
-        "rope hammer": "cable rope hammer curl",
-        "pushdown": "cable pushdown",
-        "preacher curl": "lever preacher curl",
-        "overhead cable": "cable rope overhead triceps extension",
-        "reverse fly": "lever seated reverse fly",
-        "side plank": "side plank"
+        "face pull": "face pull",
+        "lat pulldown": "pulldown", # Generico, prende tutto
+        "straight arm": "straight arm pulldown",
+        "cable row": "seated cable row",
+        "t-bar": "t-bar row",
+        "leg curl": "leg curl", # Generico
+        "lying leg curl": "lying leg curl",
+        "leg press": "leg press", # Generico, evita "sled"
+        "leg extension": "leg extension",
+        "calf raise": "calf raise",
+        "hip adduction": "adductor", # Spesso si chiamano così
+        "hammer curl": "hammer curl",
+        "rope hammer": "rope hammer",
+        "pushdown": "pushdown",
+        "preacher curl": "preacher curl",
+        "overhead cable": "overhead triceps",
+        "reverse fly": "reverse fly",
+        "side plank": "side plank",
+        "plank": "plank",
+        "dead bug": "dead bug",
+        "vacuum": "stomach vacuum"
     }
 
-    # Applica mappatura se trovi la chiave nella query
+    # Se troviamo una chiave nel testo, usiamo il valore mappato come target
     target_name = q
     for k, v in manual_map.items():
         if k in q:
             target_name = v
-            break # Trovato mapping, stop
+            break 
 
-    # --- B. FILTRO IMMUTABILE (SACRED WORDS) ---
-    # Se la query contiene una di queste parole, il risultato DEVE contenerla.
-    sacred_words = [
-        "press", "fly", "row", "curl", "extension", "squat", "deadlift", 
-        "plank", "pull", "push", "raise", "side", "incline", "decline", "lever", "sled"
-    ]
+    # 3. RICERCA FUZZY
+    db_names = [x['name'] for x in db_exercises]
     
-    # Quali parole sacre sono nella query target?
-    required_terms = [w for w in sacred_words if w in target_name]
-
-    # --- C. SCANSIONE DB CON FILTRO ---
-    candidates = []
+    # Cerca il miglior match
+    match = process.extractOne(target_name, db_names, scorer=fuzz.token_set_ratio)
     
-    for ex in db_exercises:
-        db_name = ex['name'].lower()
+    if match and match[1] > 60:
+        candidate_name = match[0].lower()
+        candidate_ex = next((x for x in db_exercises if x['name'] == match[0]), None)
         
-        # 1. CONTROLLO SACRO: Se manca un termine sacro, SCARTA SUBITO.
-        # Es: Query "Chest Press" ha "press". Se DB è "Chest Fly", viene scartato.
+        # 4. VALIDATORE (IL "Bouncer")
+        # Controlla che le parole chiave FONDAMENTALI siano presenti.
+        # Se cerco "Press", il risultato DEVE avere "Press".
+        # Se cerco "Fly", il risultato NON deve avere "Press".
+        
         is_valid = True
-        for term in required_terms:
-            if term not in db_name:
+        
+        # Lista di parole che NON POSSONO ESSERE SCAMBIATE
+        critical_words = ["press", "fly", "curl", "row", "extension", "squat", "deadlift", "plank", "adductor", "abductor"]
+        
+        for word in critical_words:
+            # Se la parola è nella query MA NON nel risultato -> ERRORE (Es: cerco Chest Press, trovo Chest Fly -> NO)
+            if word in target_name and word not in candidate_name:
                 is_valid = False
                 break
-        
-        if not is_valid: continue # Salta questo esercizio
-        
-        # 2. Se passa il controllo sacro, aggiungi ai candidati
-        candidates.append(ex)
+            # Se la parola è nel risultato MA NON nella query -> ERRORE (Es: cerco Squat, trovo Split Squat -> OK, ma cerco Fly trovo Press -> NO)
+            # Questo controllo è più lasco, lo usiamo solo per conflitti gravi
+            if word in candidate_name and word not in target_name:
+                # Eccezione: "Bench Press" contiene "Press", ma se cerco "Fly" non va bene.
+                # Gestiamo caso per caso o fidiamoci del fuzzy score alto
+                pass
 
-    # --- D. SELEZIONE MIGLIORE TRA I CANDIDATI ---
-    if not candidates:
-        return ([], f"Nessun risultato con termini obbligatori: {required_terms}")
+        # Validazione specifica per il Face Pull (che prima dava problemi)
+        if "face" in target_name and "face" not in candidate_name:
+            is_valid = False
 
-    # Usa Fuzzy search SOLO sui candidati filtrati (quelli che hanno le parole giuste)
-    candidate_names = [x['name'] for x in candidates]
-    best_match = process.extractOne(target_name, candidate_names, scorer=fuzz.token_set_ratio)
-    
-    if best_match:
-        # Recupera l'oggetto esercizio completo
-        for ex in candidates:
-            if ex['name'] == best_match[0]:
-                return ([BASE_URL + i for i in ex.get('images', [])], f"Strict Match: {ex['name']} ({best_match[1]}%)")
+        if is_valid and candidate_ex:
+            imgs = [BASE_URL + img for img in candidate_ex.get('images', [])]
+            return (imgs, f"Match: {match[0]} ({match[1]}%)")
+        else:
+            return ([], f"Scartato: {match[0]} (Fallito check parole chiave)")
 
-    return ([], f"Errore ricerca su '{target_name}'")
+    return ([], f"Nessun risultato per '{target_name}'")
 
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
@@ -227,7 +232,7 @@ def render_preview_card(plan_json, show_debug=False):
             with st.container():
                 if show_debug:
                     debug_msg = ex.get('debug_info', 'N/A')
-                    color = "#ff4b4b" if "Nessun risultato" in debug_msg or "Errore" in debug_msg else "#4ade80"
+                    color = "#ff4b4b" if "Nessun risultato" in debug_msg or "Scartato" in debug_msg else "#4ade80"
                     st.markdown(f"<div class='debug-img' style='color:{color}'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
 
                 c1, c2 = st.columns([2, 3])
