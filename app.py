@@ -31,10 +31,11 @@ st.markdown("""
     .exercise-details { color: #ccc; font-size: 1em; }
     .exercise-note { color: #888; font-style: italic; font-size: 0.9em; border-left: 2px solid #E20613; padding-left: 10px; margin-top: 5px; }
     
-    /* Stili Dieta */
+    /* Stili Dieta & Integrazione */
     .meal-header { background-color: #222; padding: 8px; border-radius: 4px; border-left: 4px solid #4ade80; margin-top: 15px; font-weight: bold; color: #4ade80; }
+    .supp-header { background-color: #222; padding: 8px; border-radius: 4px; border-left: 4px solid #60a5fa; margin-top: 15px; font-weight: bold; color: #60a5fa; }
     .food-item { padding: 4px 0; border-bottom: 1px solid #333; color: #eee; font-size: 0.95em; }
-    .diet-note-box { background-color: #1a1a1a; border: 1px solid #4ade80; padding: 15px; border-radius: 8px; margin-top: 20px; }
+    .note-box { background-color: #1a1a1a; border: 1px solid #555; padding: 15px; border-radius: 8px; margin-top: 20px; }
     
     .debug-img { font-size: 0.7em; color: #ffcc00; font-family: monospace; background: #222; padding: 2px 5px; margin-bottom: 5px; display: inline-block; }
     .streamlit-expanderHeader { background-color: #222 !important; color: #E20613 !important; font-weight: bold !important; border: 1px solid #E20613; }
@@ -201,8 +202,13 @@ def find_exercise_images(name_query, db_exercises):
     return ([], f"Nessun risultato per '{q}'")
 
 # ==============================================================================
-# 3. INTERFACCIA COMUNE (RENDER SCHEDA & DIETA)
+# 3. INTERFACCIA COMUNE (RENDER & DOWNLOAD)
 # ==============================================================================
+
+def create_download_link_html(content_html, filename, label):
+    """Crea un bottone per scaricare HTML."""
+    b64 = base64.b64encode(content_html.encode()).decode()
+    return f'<a href="data:text/html;base64,{b64}" download="{filename}" style="background-color:#E20613; color:white; padding:8px 15px; text-decoration:none; border-radius:5px; font-weight:bold; display:inline-block; margin-top:5px;">📄 {label}</a>'
 
 def render_preview_card(plan_json, show_debug=False):
     if not plan_json: return
@@ -210,100 +216,75 @@ def render_preview_card(plan_json, show_debug=False):
         try: plan_json = json.loads(plan_json)
         except: return
 
+    # TASTO DOWNLOAD SCHEDA
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     if not sessions: return
 
+    # Genera HTML per Download Scheda
+    html_content = """<html><head><style>body{font-family:Arial;padding:20px;} h1{color:#E20613;} .session{margin-top:20px;border-bottom:2px solid #333;} .ex{margin-bottom:10px;}</style></head><body><h1>SCHEDA ALLENAMENTO - AREA 199</h1>"""
+    for s in sessions:
+        html_content += f"<div class='session'><h2>{s.get('name','Sessione')}</h2>"
+        for ex in s.get('exercises', []):
+            html_content += f"<div class='ex'><strong>{ex.get('name','Ex')}</strong><br>{ex.get('details','')}<br><em>{ex.get('note','')}</em></div>"
+        html_content += "</div>"
+    if plan_json.get('note_coach'):
+        html_content += f"<div style='margin-top:20px; border:1px solid #E20613; padding:10px;'><strong>NOTE COACH:</strong><br>{plan_json.get('note_coach')}</div>"
+    html_content += "</body></html>"
+    
+    st.markdown(create_download_link_html(html_content, "Scheda_Allenamento.html", "SCARICA SCHEDA"), unsafe_allow_html=True)
+
+    # RENDER A VIDEO
     for session in sessions:
         s_name = session.get('name', session.get('Name', 'Sessione'))
         st.markdown(f"<div class='session-header'>{s_name}</div>", unsafe_allow_html=True)
-        
-        exercises = session.get('exercises', session.get('Exercises', []))
-        for ex in exercises:
+        for ex in session.get('exercises', []):
             with st.container():
                 if show_debug:
                     debug_msg = ex.get('debug_info', 'N/A')
                     color = "#ff4b4b" if "Nessun risultato" in debug_msg else "#4ade80"
                     st.markdown(f"<div class='debug-img' style='color:{color}'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
-
                 c1, c2 = st.columns([2, 3])
                 with c1:
                     if ex.get('images'):
                         cols_img = st.columns(2)
                         if len(ex['images']) > 0: cols_img[0].image(ex['images'][0], use_container_width=True)
                         if len(ex['images']) > 1: cols_img[1].image(ex['images'][1], use_container_width=True)
-                    else:
-                        st.markdown("<div style='color:#444; font-size:0.8em; padding:20px; border:1px dashed #333; text-align:center;'>NO IMAGE</div>", unsafe_allow_html=True)
+                    else: st.markdown("<div style='color:#444; font-size:0.8em; padding:20px; border:1px dashed #333; text-align:center;'>NO IMAGE</div>", unsafe_allow_html=True)
                 with c2:
-                    name = ex.get('name', ex.get('Name', 'Esercizio'))
-                    details = ex.get('details', ex.get('Details', ''))
-                    note = ex.get('note', ex.get('Note', ''))
-                    
-                    st.markdown(f"<div class='exercise-name'>{name}</div>", unsafe_allow_html=True)
-                    if details: st.markdown(f"<div class='exercise-details'>{details}</div>", unsafe_allow_html=True)
-                    if note: st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='exercise-name'>{ex.get('name','')}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='exercise-details'>{ex.get('details','')}</div>", unsafe_allow_html=True)
+                    if ex.get('note'): st.markdown(f"<div class='exercise-note'>{ex.get('note')}</div>", unsafe_allow_html=True)
             st.divider()
-
-def create_download_link(diet_json):
-    """Genera un file HTML scaricabile per la dieta."""
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; padding: 20px; background-color: white; color: black; }}
-            h1 {{ color: #E20613; border-bottom: 2px solid #E20613; }}
-            h2 {{ color: #333; background: #eee; padding: 5px; margin-top: 20px; }}
-            .meal {{ margin-bottom: 15px; padding-left: 10px; border-left: 3px solid #4ade80; }}
-            .food {{ margin: 5px 0; }}
-            .note {{ font-style: italic; color: #666; margin-top: 20px; border: 1px solid #ccc; padding: 10px; }}
-        </style>
-    </head>
-    <body>
-        <h1>PIANO ALIMENTARE - AREA 199</h1>
-        <p><strong>Target:</strong> {diet_json.get('daily_calories', 'N/A')} | <strong>Acqua:</strong> {diet_json.get('water_intake', 'N/A')}</p>
-    """
     
-    days = diet_json.get('days', [])
-    for day in days:
-        html += f"<h2>{day.get('day_name', 'Giornata')}</h2>"
-        for meal in day.get('meals', []):
-            html += f"<div class='meal'><strong>{meal.get('name', 'Pasto')}</strong>"
-            for food in meal.get('foods', []):
-                html += f"<div class='food'>• {food}</div>"
-            if meal.get('notes'): html += f"<div><em>({meal['notes']})</em></div>"
-            html += "</div>"
-            
-    if diet_json.get('diet_note'):
-        html += f"<div class='note'><strong>NOTE DEL COACH:</strong><br>{diet_json['diet_note']}</div>"
-        
-    html += "</body></html>"
-    
-    b64 = base64.b64encode(html.encode()).decode()
-    return f'<a href="data:text/html;base64,{b64}" download="Dieta_Area199.html" style="background-color:#E20613; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold; display:block; text-align:center; margin-top:10px;">📄 SCARICA DIETA STAMPABILE</a>'
+    # Note Coach (in fondo alla scheda video)
+    if plan_json.get('note_coach'):
+        st.info(f"📝 NOTE SCHEDA: {plan_json.get('note_coach')}")
 
 def render_diet_card(diet_json):
-    """Renderizza la dieta con Accordion (Tendine) per i giorni."""
     if not diet_json: return
     if isinstance(diet_json, str):
         try: diet_json = json.loads(diet_json)
-        except: st.error("Errore formato dieta"); return
+        except: return
 
-    # Header
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        if 'daily_calories' in diet_json:
-            st.info(f"🔥 **Target:** {diet_json.get('daily_calories')} | 💧 {diet_json.get('water_intake', '2-3L')}")
-    with c2:
-        # Tasto Download
-        st.markdown(create_download_link(diet_json), unsafe_allow_html=True)
+    # HTML Download Dieta
+    html_content = f"""<html><head><style>body{{font-family:Arial;padding:20px;}} h1{{color:#4ade80;}} .meal{{margin-bottom:10px;padding-left:10px;border-left:3px solid #4ade80;}}</style></head><body><h1>PIANO ALIMENTARE</h1><p>Target: {diet_json.get('daily_calories','')} | Acqua: {diet_json.get('water_intake','')}</p>"""
+    for day in diet_json.get('days', []):
+        html_content += f"<h2>{day.get('day_name')}</h2>"
+        for m in day.get('meals', []):
+            html_content += f"<div class='meal'><strong>{m.get('name')}</strong><br>{', '.join(m.get('foods',[]))}<br><em>{m.get('notes','')}</em></div>"
+    if diet_json.get('diet_note'): html_content += f"<br><strong>NOTE:</strong> {diet_json.get('diet_note')}"
+    html_content += "</body></html>"
 
-    # Giorni (Accordion)
+    st.markdown(create_download_link_html(html_content, "Piano_Alimentare.html", "SCARICA DIETA"), unsafe_allow_html=True)
+
+    # Render Video
+    if 'daily_calories' in diet_json:
+        st.info(f"🔥 Target: {diet_json.get('daily_calories')} | 💧 {diet_json.get('water_intake', '2-3L')}")
+
     days = diet_json.get('days', [])
-    if not days: st.warning("Nessun giorno specificato.")
-    
     for day in days:
         with st.expander(f"📅 {day.get('day_name', 'Giornata Tipo')}", expanded=False):
-            meals = day.get('meals', [])
-            for meal in meals:
+            for meal in day.get('meals', []):
                 st.markdown(f"<div class='meal-header'>{meal.get('name', 'Pasto')}</div>", unsafe_allow_html=True)
                 foods = meal.get('foods', [])
                 if isinstance(foods, list):
@@ -311,14 +292,40 @@ def render_diet_card(diet_json):
                 else: st.write(foods)
                 if meal.get('notes'): st.caption(f"📝 {meal['notes']}")
 
-    # Note Finali (Fuori dalle tendine)
     if diet_json.get('diet_note'):
+        st.markdown(f"<div class='note-box'><strong style='color:#4ade80;'>💬 NOTE DIETA:</strong><br><span style='color:#ddd;'>{diet_json['diet_note']}</span></div>", unsafe_allow_html=True)
+
+def render_supp_card(supp_json):
+    """Renderizza l'integrazione."""
+    if not supp_json: return
+    if isinstance(supp_json, str):
+        try: supp_json = json.loads(supp_json)
+        except: return
+
+    # HTML Download Integrazione
+    html_content = """<html><head><style>body{font-family:Arial;padding:20px;} h1{color:#60a5fa;}</style></head><body><h1>PIANO INTEGRAZIONE</h1><ul>"""
+    for item in supp_json.get('items', []):
+        html_content += f"<li><strong>{item.get('name')}</strong>: {item.get('dose')} ({item.get('timing')}) - <em>{item.get('notes','')}</em></li>"
+    html_content += "</ul>"
+    if supp_json.get('supp_note'): html_content += f"<br><strong>NOTE:</strong> {supp_json.get('supp_note')}"
+    html_content += "</body></html>"
+
+    st.markdown(create_download_link_html(html_content, "Piano_Integrazione.html", "SCARICA INTEGRAZIONE"), unsafe_allow_html=True)
+
+    # Render Video
+    items = supp_json.get('items', [])
+    for item in items:
         st.markdown(f"""
-        <div class="diet-note-box">
-            <strong style="color:#E20613;">💬 NOTE DEL COACH:</strong><br>
-            <span style="color:#ddd;">{diet_json['diet_note']}</span>
+        <div style="border-bottom:1px solid #333; padding:10px;">
+            <strong style="color:#60a5fa; font-size:1.1em;">{item.get('name')}</strong><br>
+            <span style="color:white;">💊 {item.get('dose')}</span> | 
+            <span style="color:#aaa;">🕒 {item.get('timing')}</span>
+            <div style="color:#666; font-style:italic; font-size:0.9em;">{item.get('notes','')}</div>
         </div>
         """, unsafe_allow_html=True)
+
+    if supp_json.get('supp_note'):
+        st.markdown(f"<div class='note-box'><strong style='color:#60a5fa;'>💬 NOTE INTEGRAZIONE:</strong><br><span style='color:#ddd;'>{supp_json['supp_note']}</span></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 4. DASHBOARD COACH
@@ -372,6 +379,7 @@ def coach_dashboard():
             st.session_state['current_athlete'] = sel_email
             st.session_state['generated_plan'] = None
             st.session_state['generated_diet'] = None 
+            st.session_state['generated_supp'] = None # Nuovo stato
             st.session_state['coach_comment'] = ""
 
         history = get_full_history(sel_email)
@@ -401,29 +409,31 @@ def coach_dashboard():
         st.divider()
 
         st.subheader("🛠️ CREAZIONE PIANO")
-        tab_workout, tab_diet = st.tabs(["🏋️‍♂️ ALLENAMENTO", "🥗 ALIMENTAZIONE"])
+        tab_w, tab_d, tab_s = st.tabs(["🏋️‍♂️ ALLENAMENTO", "🥗 ALIMENTAZIONE", "💊 INTEGRAZIONE"])
 
-        with tab_workout:
-            raw_workout = st.text_area("Incolla Scheda Allenamento", height=400, key="input_raw_workout", placeholder="Sessione A...")
+        with tab_w:
+            raw_workout = st.text_area("Incolla Scheda Allenamento", height=300, key="input_raw_workout", placeholder="Sessione A...")
+            note_workout = st.text_area("Note specifiche Scheda", height=80, key="input_note_w")
         
-        with tab_diet:
-            raw_diet = st.text_area("Incolla Piano Alimentare", height=400, key="input_raw_diet", placeholder="Lunedì: Colazione...\nMartedì:...")
-            diet_note_input = st.text_area("Note specifiche per la DIETA (appariranno in fondo)", height=100, key="input_diet_note")
+        with tab_d:
+            raw_diet = st.text_area("Incolla Piano Alimentare", height=300, key="input_raw_diet", placeholder="Lunedì: Colazione...")
+            note_diet = st.text_area("Note specifiche Dieta", height=80, key="input_note_d")
 
-        comment_input = st.text_area("Commento Generale (Chat)", height=100, key="input_comment")
+        with tab_s:
+            raw_supp = st.text_area("Incolla Piano Integrazione", height=300, key="input_raw_supp", placeholder="Creatina 5g post wo...")
+            note_supp = st.text_area("Note specifiche Integrazione", height=80, key="input_note_s")
+
+        st.markdown("---")
+        comment_input = st.text_area("💬 MESSAGGIO CHAT GENERALE (Visibile in alto)", height=100, key="input_comment")
 
         if st.button("🔄 GENERA ANTEPRIMA"):
             with st.spinner("Elaborazione..."):
                 client_ai = openai.Client(api_key=st.secrets["openai_key"])
                 
-                # WORKOUT
+                # 1. WORKOUT
                 if raw_workout:
-                    prompt_w = f"""
-                    Agisci come un parser JSON rigoroso.
-                    INPUT: {raw_workout}
-                    ISTRUZIONI: Estrai SEARCH_NAME se presente.
-                    SCHEMA JSON: {{"sessions": [{{"name": "...", "exercises": [{{"name": "...", "search_name": "...", "details": "...", "note": "..."}}]}}]}}
-                    """
+                    prompt_w = f"""Agisci come parser JSON. INPUT: {raw_workout}. NOTE: {note_workout}.
+                    SCHEMA: {{"sessions": [{{"name": "...", "exercises": [{{"name": "...", "search_name": "...", "details": "...", "note": "..."}}]}}], "note_coach": "{note_workout}"}}"""
                     try:
                         res_w = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt_w}])
                         clean_w = clean_json_response(res_w.choices[0].message.content)
@@ -435,87 +445,75 @@ def coach_dashboard():
                                 ex['images'] = imgs[:2]
                                 ex['debug_info'] = f"Query: '{query}' -> {debug_msg}"
                         st.session_state['generated_plan'] = plan_json
-                    except Exception as e: st.error(f"Errore AI Workout: {e}")
+                    except: st.error("Errore AI Workout")
                 else: st.session_state['generated_plan'] = None
 
-                # DIETA (NUOVA STRUTTURA A GIORNI)
+                # 2. DIETA
                 if raw_diet:
-                    prompt_d = f"""
-                    Agisci come un nutrizionista. Analizza il testo e dividilo per GIORNI se specificati (Lunedì, Martedì...).
-                    Se non ci sono giorni specifici, metti tutto sotto "Giornata Tipo".
-                    
-                    INPUT UTENTE:
-                    {raw_diet}
-                    
-                    INPUT NOTA COACH:
-                    {diet_note_input}
-                    
-                    SCHEMA JSON OBBLIGATORIO:
-                    {{
-                        "daily_calories": "es. 2000 kcal",
-                        "water_intake": "es. 2L",
-                        "diet_note": "{diet_note_input}",
-                        "days": [
-                            {{
-                                "day_name": "Lunedì (o Giornata Tipo)",
-                                "meals": [
-                                    {{
-                                        "name": "Colazione",
-                                        "foods": ["Uova", "Pane"],
-                                        "notes": "..."
-                                    }}
-                                ]
-                            }}
-                        ]
-                    }}
-                    """
+                    prompt_d = f"""Agisci come nutrizionista. INPUT: {raw_diet}. NOTE: {note_diet}.
+                    Dividi per GIORNI (es. Lunedì, Martedì). Se generico usa "Giornata Tipo".
+                    SCHEMA: {{"daily_calories": "...", "water_intake": "...", "diet_note": "{note_diet}", "days": [{{"day_name": "...", "meals": [{{"name": "...", "foods": ["..."], "notes": "..."}}]}}]}}"""
                     try:
                         res_d = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt_d}])
-                        clean_d = clean_json_response(res_d.choices[0].message.content)
-                        diet_json = json.loads(clean_d)
+                        diet_json = json.loads(clean_json_response(res_d.choices[0].message.content))
                         st.session_state['generated_diet'] = diet_json
-                    except Exception as e: st.error(f"Errore AI Dieta: {e}")
+                    except: st.error("Errore AI Dieta")
                 else: st.session_state['generated_diet'] = None
+
+                # 3. INTEGRAZIONE
+                if raw_supp:
+                    prompt_s = f"""Agisci come esperto. INPUT: {raw_supp}. NOTE: {note_supp}.
+                    SCHEMA: {{"items": [{{"name": "...", "dose": "...", "timing": "...", "notes": "..."}}], "supp_note": "{note_supp}"}}"""
+                    try:
+                        res_s = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt_s}])
+                        supp_json = json.loads(clean_json_response(res_s.choices[0].message.content))
+                        st.session_state['generated_supp'] = supp_json
+                    except: st.error("Errore AI Integrazione")
+                else: st.session_state['generated_supp'] = None
                 
                 st.session_state['coach_comment'] = comment_input
                 st.rerun()
 
         # --- ANTEPRIMA ---
-        if st.session_state.get('generated_plan') or st.session_state.get('generated_diet'):
+        if st.session_state.get('generated_plan') or st.session_state.get('generated_diet') or st.session_state.get('generated_supp'):
             st.markdown("---")
             st.subheader("👁️ ANTEPRIMA FINALE")
-            if st.session_state['coach_comment']: st.info(f"💬 {st.session_state['coach_comment']}")
+            if st.session_state['coach_comment']: st.info(f"💬 CHAT: {st.session_state['coach_comment']}")
             
-            t1, t2 = st.tabs(["SCHEDA", "DIETA"])
+            t1, t2, t3 = st.tabs(["SCHEDA", "DIETA", "INTEGRAZIONE"])
             with t1:
-                if st.session_state.get('generated_plan'):
-                    render_preview_card(st.session_state['generated_plan'], show_debug=True)
+                if st.session_state.get('generated_plan'): render_preview_card(st.session_state['generated_plan'], show_debug=True)
                 else: st.warning("Nessuna scheda.")
-            
             with t2:
-                if st.session_state.get('generated_diet'):
-                    render_diet_card(st.session_state['generated_diet'])
+                if st.session_state.get('generated_diet'): render_diet_card(st.session_state['generated_diet'])
                 else: st.warning("Nessuna dieta.")
+            with t3:
+                if st.session_state.get('generated_supp'): render_supp_card(st.session_state['generated_supp'])
+                else: st.warning("Nessuna integrazione.")
 
-            if st.button("✅ INVIA AL CLIENTE", type="primary"):
+            if st.button("✅ INVIA TUTTO AL CLIENTE", type="primary"):
                 try:
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                     full_name = f"{sel_email}" 
+                    
                     json_w = json.dumps(st.session_state['generated_plan']) if st.session_state['generated_plan'] else ""
                     json_d = json.dumps(st.session_state['generated_diet']) if st.session_state['generated_diet'] else ""
+                    json_s = json.dumps(st.session_state['generated_supp']) if st.session_state['generated_supp'] else ""
                     
                     db.append_row([
                         datetime.now().strftime("%Y-%m-%d"),
                         sel_email,
                         full_name,
                         st.session_state['coach_comment'],
-                        json_w, 
-                        json_d  
+                        json_w, # Colonna E
+                        json_d,  # Colonna F
+                        json_s   # Colonna G (Nuova)
                     ])
                     st.success("INVIATA CORRETTAMENTE!")
                     st.session_state['generated_plan'] = None
                     st.session_state['generated_diet'] = None
-                except Exception as e: st.error(f"Errore DB: {e}. HAI AGGIUNTO LA COLONNA F?")
+                    st.session_state['generated_supp'] = None
+                except Exception as e: st.error(f"Errore DB: {e}. HAI AGGIUNTO LA COLONNA G?")
 
 # ==============================================================================
 # 5. DASHBOARD ATLETA
@@ -539,8 +537,9 @@ def athlete_dashboard():
                 
                 raw_w = last_plan.get('JSON_Completo') or last_plan.get('JSON_Scheda')
                 raw_d = last_plan.get('JSON_Dieta') 
+                raw_s = last_plan.get('JSON_Integrazione')
                 
-                tab_w, tab_d = st.tabs(["🏋️‍♂️ ALLENAMENTO", "🥗 ALIMENTAZIONE"])
+                tab_w, tab_d, tab_s = st.tabs(["🏋️‍♂️ ALLENAMENTO", "🥗 ALIMENTAZIONE", "💊 INTEGRAZIONE"])
                 
                 with tab_w:
                     if raw_w:
@@ -548,7 +547,7 @@ def athlete_dashboard():
                             try: w_json = json.loads(raw_w)
                             except: w_json = ast.literal_eval(raw_w)
                             render_preview_card(w_json, show_debug=False)
-                        except: st.error("Errore scheda.")
+                        except: st.error("Errore visualizzazione scheda.")
                     else: st.info("Nessun allenamento.")
 
                 with tab_d:
@@ -557,8 +556,17 @@ def athlete_dashboard():
                             try: d_json = json.loads(raw_d)
                             except: d_json = ast.literal_eval(raw_d)
                             render_diet_card(d_json)
-                        except: st.error("Errore dieta.")
+                        except: st.error("Errore visualizzazione dieta.")
                     else: st.info("Nessuna alimentazione.")
+
+                with tab_s:
+                    if raw_s:
+                        try:
+                            try: s_json = json.loads(raw_s)
+                            except: s_json = ast.literal_eval(raw_s)
+                            render_supp_card(s_json)
+                        except: st.error("Errore visualizzazione integrazione.")
+                    else: st.info("Nessuna integrazione.")
 
             else: st.warning("Nessun piano trovato per questa email.")
         except Exception as e: st.error(f"Errore connessione: {e}")
