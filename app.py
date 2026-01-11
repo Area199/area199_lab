@@ -35,7 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. MOTORE DATI
+# 1. UTILITIES & MOTORE DATI
 # ==============================================================================
 
 @st.cache_resource
@@ -110,7 +110,7 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (TOKEN MATCH STRICT)
+# 2. MOTORE AI & IMMAGINI (IMMUTABLE LOGIC)
 # ==============================================================================
 @st.cache_data
 def load_exercise_db():
@@ -122,84 +122,87 @@ def find_exercise_images(name_query, db_exercises):
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     q = name_query.lower().strip()
 
-    # --- MAPPA DELLE PAROLE OBBLIGATORIE ---
-    # "tuo nome" : ["parola1_obbligatoria", "parola2_obbligatoria"]
-    # Il sistema cercherà nel DB esercizi che contengono TUTTE le parole della lista.
-    # Se la lista è vuota, usa le parole della query originale.
-    token_map = {
-        "pec deck": ["pec", "deck"], 
-        "reverse pec deck": ["reverse", "fly"], # Correzione tecnica
-        "incline dumbbell press": ["incline", "dumbbell"],
-        "chest press": ["chest", "press"], 
-        "convergent chest press": ["chest", "press"],
-        "lateral raise": ["lateral", "raise"],
-        "face pull": ["face", "pull"], # Ora è impossibile che esca "Lift" perché manca "Face"
-        "plank": ["plank"],
-        "side plank": ["side", "plank"],
-        "lat pulldown": ["lat", "pulldown"],
-        "straight arm": ["straight", "arm"],
-        "t-bar": ["t-bar"], 
-        "cable row": ["cable", "row"],
-        "hyperextension": ["hyperextension"],
-        "vacuum": ["vacuum"],
-        "leg curl": ["leg", "curl"],
-        "lying leg curl": ["lying", "leg", "curl"],
-        "leg press": ["leg", "press"], # Matcherà "Sled 45 Degree Leg Press"
-        "leg extension": ["leg", "extension"],
-        "adduction": ["adduction"],
-        "calf raise": ["calf", "raise"],
-        "dead bug": ["dead", "bug"],
-        "hammer curl": ["hammer", "curl"],
-        "triceps pushdown": ["pushdown"],
-        "preacher curl": ["preacher"],
-        "overhead cable": ["overhead", "triceps"],
-        "reverse fly": ["reverse", "fly"]
+    # --- A. DIZIONARIO DI TRADUZIONE FORZATA ---
+    # Mappa le tue diciture ai nomi "tecnici" del DB (spesso usano 'Lever' per le macchine)
+    manual_map = {
+        "pec deck": "lever pec deck fly",
+        "reverse pec deck": "lever seated reverse fly", 
+        "chest press": "lever chest press",
+        "chest press machine": "lever chest press",
+        "convergent chest press": "lever chest press",
+        "incline dumbbell press": "dumbbell incline bench press",
+        "lateral raise": "dumbbell lateral raise",
+        "face pull": "cable standing face pull",
+        "lat pulldown": "cable lat pulldown",
+        "straight arm": "cable straight arm pulldown",
+        "cable row": "cable seated row",
+        "t-bar": "lever t-bar row",
+        "leg curl": "lever lying leg curl",
+        "lying leg curl": "lever lying leg curl",
+        "leg extension": "lever leg extension",
+        "leg press": "sled 45 degree leg press",
+        "calf raise": "lever seated calf raise",
+        "hip adduction": "lever seated hip adduction",
+        "hammer curl": "dumbbell hammer curl",
+        "rope hammer": "cable rope hammer curl",
+        "pushdown": "cable pushdown",
+        "preacher curl": "lever preacher curl",
+        "overhead cable": "cable rope overhead triceps extension",
+        "reverse fly": "lever seated reverse fly",
+        "side plank": "side plank"
     }
 
-    # 1. Determina i token (parole) necessari
-    required_tokens = []
-    
-    # Cerca nella mappa se la query contiene una chiave nota
-    match_key = None
-    for k, tokens in token_map.items():
+    # Applica mappatura se trovi la chiave nella query
+    target_name = q
+    for k, v in manual_map.items():
         if k in q:
-            required_tokens = tokens
-            match_key = k
-            break
-    
-    # Se non c'è nella mappa, usa le parole della query stessa (minimo 3 caratteri)
-    if not required_tokens:
-        required_tokens = [w for w in q.split() if len(w) > 2]
+            target_name = v
+            break # Trovato mapping, stop
 
-    # 2. Scansione Database
+    # --- B. FILTRO IMMUTABILE (SACRED WORDS) ---
+    # Se la query contiene una di queste parole, il risultato DEVE contenerla.
+    sacred_words = [
+        "press", "fly", "row", "curl", "extension", "squat", "deadlift", 
+        "plank", "pull", "push", "raise", "side", "incline", "decline", "lever", "sled"
+    ]
+    
+    # Quali parole sacre sono nella query target?
+    required_terms = [w for w in sacred_words if w in target_name]
+
+    # --- C. SCANSIONE DB CON FILTRO ---
     candidates = []
+    
     for ex in db_exercises:
         db_name = ex['name'].lower()
         
-        # Verifica se TUTTI i token richiesti sono nel nome del DB
-        # Es: required=["leg", "press"] -> "Sled 45 Degree Leg Press" -> OK
-        if all(token in db_name for token in required_tokens):
-            candidates.append(ex)
-
-    # 3. Selezione Migliore
-    if candidates:
-        # Se ci sono più candidati, prendi quello col nome più corto (di solito è quello "base")
-        # Es: Tra "Leg Press" e "Single Leg Press", vince "Leg Press"
-        best_match = min(candidates, key=lambda x: len(x['name']))
+        # 1. CONTROLLO SACRO: Se manca un termine sacro, SCARTA SUBITO.
+        # Es: Query "Chest Press" ha "press". Se DB è "Chest Fly", viene scartato.
+        is_valid = True
+        for term in required_terms:
+            if term not in db_name:
+                is_valid = False
+                break
         
-        imgs = [BASE_URL + img for img in best_match.get('images', [])]
-        used_tokens = "+".join(required_tokens)
-        return (imgs, f"Token Match: [{used_tokens}] -> {best_match['name']}")
+        if not is_valid: continue # Salta questo esercizio
+        
+        # 2. Se passa il controllo sacro, aggiungi ai candidati
+        candidates.append(ex)
 
-    # 4. Fallback Disperato (Fuzzy) se i token falliscono
-    db_names = [x['name'] for x in db_exercises]
-    fuzzy = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
-    if fuzzy and fuzzy[1] > 70:
-         for ex in db_exercises:
-            if ex['name'] == fuzzy[0]:
-                return ([BASE_URL + i for i in ex.get('images', [])], f"Fuzzy Fallback: {fuzzy[0]}")
+    # --- D. SELEZIONE MIGLIORE TRA I CANDIDATI ---
+    if not candidates:
+        return ([], f"Nessun risultato con termini obbligatori: {required_terms}")
 
-    return ([], f"Nessun risultato (Tokens: {required_tokens})")
+    # Usa Fuzzy search SOLO sui candidati filtrati (quelli che hanno le parole giuste)
+    candidate_names = [x['name'] for x in candidates]
+    best_match = process.extractOne(target_name, candidate_names, scorer=fuzz.token_set_ratio)
+    
+    if best_match:
+        # Recupera l'oggetto esercizio completo
+        for ex in candidates:
+            if ex['name'] == best_match[0]:
+                return ([BASE_URL + i for i in ex.get('images', [])], f"Strict Match: {ex['name']} ({best_match[1]}%)")
+
+    return ([], f"Errore ricerca su '{target_name}'")
 
 # ==============================================================================
 # 3. INTERFACCIA COMUNE (RENDER)
@@ -224,7 +227,7 @@ def render_preview_card(plan_json, show_debug=False):
             with st.container():
                 if show_debug:
                     debug_msg = ex.get('debug_info', 'N/A')
-                    color = "#ff4b4b" if "Nessun risultato" in debug_msg else "#4ade80"
+                    color = "#ff4b4b" if "Nessun risultato" in debug_msg or "Errore" in debug_msg else "#4ade80"
                     st.markdown(f"<div class='debug-img' style='color:{color}'>🔍 {debug_msg}</div>", unsafe_allow_html=True)
 
                 c1, c2 = st.columns([2, 3])
