@@ -10,6 +10,7 @@ import openai
 import requests
 import matplotlib.pyplot as plt
 from rapidfuzz import process, fuzz
+import base64
 
 # ==============================================================================
 # CONFIGURAZIONE & STILE
@@ -30,9 +31,12 @@ st.markdown("""
     .exercise-details { color: #ccc; font-size: 1em; }
     .exercise-note { color: #888; font-style: italic; font-size: 0.9em; border-left: 2px solid #E20613; padding-left: 10px; margin-top: 5px; }
     
-    .debug-img { font-size: 0.7em; color: #ffcc00; font-family: monospace; background: #222; padding: 2px 5px; margin-bottom: 5px; display: inline-block; }
+    /* Stili Dieta */
+    .meal-header { background-color: #222; padding: 8px; border-radius: 4px; border-left: 4px solid #4ade80; margin-top: 15px; font-weight: bold; color: #4ade80; }
+    .food-item { padding: 4px 0; border-bottom: 1px solid #333; color: #eee; font-size: 0.95em; }
+    .diet-note-box { background-color: #1a1a1a; border: 1px solid #4ade80; padding: 15px; border-radius: 8px; margin-top: 20px; }
     
-    /* Stile per il box di ricerca immagini */
+    .debug-img { font-size: 0.7em; color: #ffcc00; font-family: monospace; background: #222; padding: 2px 5px; margin-bottom: 5px; display: inline-block; }
     .streamlit-expanderHeader { background-color: #222 !important; color: #E20613 !important; font-weight: bold !important; border: 1px solid #E20613; }
 </style>
 """, unsafe_allow_html=True)
@@ -113,16 +117,15 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (RESETTABLE)
+# 2. MOTORE AI & IMMAGINI
 # ==============================================================================
-@st.cache_data(ttl=3600) # Scade ogni ora
+@st.cache_data(ttl=3600)
 def load_exercise_db():
     try: 
-        # Timeout aumentato per connessioni lente
         resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=20)
         if resp.status_code == 200:
             data = resp.json()
-            return sorted(data, key=lambda x: x['name']) # Ordina alfabeticamente
+            return sorted(data, key=lambda x: x['name'])
         return []
     except: return []
 
@@ -131,7 +134,6 @@ def find_exercise_images(name_query, db_exercises):
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     q = name_query.lower().strip()
 
-    # --- 1. DIZIONARIO DEI SINONIMI ---
     synonyms = {
         "lying leg curl": "lying leg curls",
         "leg curl": "lying leg curls",
@@ -170,7 +172,6 @@ def find_exercise_images(name_query, db_exercises):
             else: search_terms = [val]
             break
 
-    # --- 2. RICERCA ---
     for term in search_terms:
         candidates = []
         for ex in db_exercises:
@@ -180,7 +181,6 @@ def find_exercise_images(name_query, db_exercises):
             best = min(candidates, key=lambda x: len(x['name']))
             return ([BASE_URL + i for i in best.get('images', [])], f"Synonym: '{term}' -> {best['name']}")
 
-    # --- 3. FALLBACK FUZZY ---
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
     
@@ -201,18 +201,17 @@ def find_exercise_images(name_query, db_exercises):
     return ([], f"Nessun risultato per '{q}'")
 
 # ==============================================================================
-# 3. INTERFACCIA COMUNE (RENDER)
+# 3. INTERFACCIA COMUNE (RENDER SCHEDA & DIETA)
 # ==============================================================================
 
 def render_preview_card(plan_json, show_debug=False):
-    if not plan_json:
-        st.error("⚠️ Dati vuoti.")
-        return
+    if not plan_json: return
+    if isinstance(plan_json, str):
+        try: plan_json = json.loads(plan_json)
+        except: return
 
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
-    if not sessions:
-        st.warning("⚠️ Nessuna sessione trovata.")
-        return
+    if not sessions: return
 
     for session in sessions:
         s_name = session.get('name', session.get('Name', 'Sessione'))
@@ -230,11 +229,8 @@ def render_preview_card(plan_json, show_debug=False):
                 with c1:
                     if ex.get('images'):
                         cols_img = st.columns(2)
-                        # Mostra fino a 2 immagini (Start/End)
-                        if len(ex['images']) > 0:
-                            cols_img[0].image(ex['images'][0], use_container_width=True)
-                        if len(ex['images']) > 1:
-                            cols_img[1].image(ex['images'][1], use_container_width=True)
+                        if len(ex['images']) > 0: cols_img[0].image(ex['images'][0], use_container_width=True)
+                        if len(ex['images']) > 1: cols_img[1].image(ex['images'][1], use_container_width=True)
                     else:
                         st.markdown("<div style='color:#444; font-size:0.8em; padding:20px; border:1px dashed #333; text-align:center;'>NO IMAGE</div>", unsafe_allow_html=True)
                 with c2:
@@ -247,6 +243,83 @@ def render_preview_card(plan_json, show_debug=False):
                     if note: st.markdown(f"<div class='exercise-note'>{note}</div>", unsafe_allow_html=True)
             st.divider()
 
+def create_download_link(diet_json):
+    """Genera un file HTML scaricabile per la dieta."""
+    html = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; padding: 20px; background-color: white; color: black; }}
+            h1 {{ color: #E20613; border-bottom: 2px solid #E20613; }}
+            h2 {{ color: #333; background: #eee; padding: 5px; margin-top: 20px; }}
+            .meal {{ margin-bottom: 15px; padding-left: 10px; border-left: 3px solid #4ade80; }}
+            .food {{ margin: 5px 0; }}
+            .note {{ font-style: italic; color: #666; margin-top: 20px; border: 1px solid #ccc; padding: 10px; }}
+        </style>
+    </head>
+    <body>
+        <h1>PIANO ALIMENTARE - AREA 199</h1>
+        <p><strong>Target:</strong> {diet_json.get('daily_calories', 'N/A')} | <strong>Acqua:</strong> {diet_json.get('water_intake', 'N/A')}</p>
+    """
+    
+    days = diet_json.get('days', [])
+    for day in days:
+        html += f"<h2>{day.get('day_name', 'Giornata')}</h2>"
+        for meal in day.get('meals', []):
+            html += f"<div class='meal'><strong>{meal.get('name', 'Pasto')}</strong>"
+            for food in meal.get('foods', []):
+                html += f"<div class='food'>• {food}</div>"
+            if meal.get('notes'): html += f"<div><em>({meal['notes']})</em></div>"
+            html += "</div>"
+            
+    if diet_json.get('diet_note'):
+        html += f"<div class='note'><strong>NOTE DEL COACH:</strong><br>{diet_json['diet_note']}</div>"
+        
+    html += "</body></html>"
+    
+    b64 = base64.b64encode(html.encode()).decode()
+    return f'<a href="data:text/html;base64,{b64}" download="Dieta_Area199.html" style="background-color:#E20613; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold; display:block; text-align:center; margin-top:10px;">📄 SCARICA DIETA STAMPABILE</a>'
+
+def render_diet_card(diet_json):
+    """Renderizza la dieta con Accordion (Tendine) per i giorni."""
+    if not diet_json: return
+    if isinstance(diet_json, str):
+        try: diet_json = json.loads(diet_json)
+        except: st.error("Errore formato dieta"); return
+
+    # Header
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        if 'daily_calories' in diet_json:
+            st.info(f"🔥 **Target:** {diet_json.get('daily_calories')} | 💧 {diet_json.get('water_intake', '2-3L')}")
+    with c2:
+        # Tasto Download
+        st.markdown(create_download_link(diet_json), unsafe_allow_html=True)
+
+    # Giorni (Accordion)
+    days = diet_json.get('days', [])
+    if not days: st.warning("Nessun giorno specificato.")
+    
+    for day in days:
+        with st.expander(f"📅 {day.get('day_name', 'Giornata Tipo')}", expanded=False):
+            meals = day.get('meals', [])
+            for meal in meals:
+                st.markdown(f"<div class='meal-header'>{meal.get('name', 'Pasto')}</div>", unsafe_allow_html=True)
+                foods = meal.get('foods', [])
+                if isinstance(foods, list):
+                    for food in foods: st.markdown(f"<div class='food-item'>• {food}</div>", unsafe_allow_html=True)
+                else: st.write(foods)
+                if meal.get('notes'): st.caption(f"📝 {meal['notes']}")
+
+    # Note Finali (Fuori dalle tendine)
+    if diet_json.get('diet_note'):
+        st.markdown(f"""
+        <div class="diet-note-box">
+            <strong style="color:#E20613;">💬 NOTE DEL COACH:</strong><br>
+            <span style="color:#ddd;">{diet_json['diet_note']}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
 # ==============================================================================
 # 4. DASHBOARD COACH
 # ==============================================================================
@@ -257,57 +330,35 @@ def coach_dashboard():
     
     st.title("DASHBOARD COACH")
 
-    # =================================================================
-    # --- BOX DI RICERCA SPOSTATO IN CIMA (SEMPRE VISIBILE) ---
-    # =================================================================
-    with st.expander("🔎 BROWSER DATABASE ESERCIZI (Trova il nome esatto)", expanded=True):
-        
-        # --- SEZIONE INFO DATABASE (RANGE A-Z) ---
+    with st.expander("🔎 BROWSER DATABASE ESERCIZI", expanded=True):
         c1, c2 = st.columns([3, 1])
         with c1:
-            if ex_db and len(ex_db) > 0:
-                first_ex = ex_db[0]['name']
-                last_ex = ex_db[-1]['name']
-                st.info(f"📚 **Database Caricato:** {len(ex_db)} esercizi.\n\n"
-                        f"🔤 **Copertura Alfabetica:** da **{first_ex}** a **{last_ex}**")
-                
-                # Controllo integrità
-                if last_ex.upper()[0] < 'R': # Se finisce prima della R, è sospetto
-                    st.error("⚠️ ATTENZIONE: Il Database sembra incompleto! Premi 'FORZA RESET DB'.")
-            else:
-                st.error("⚠️ Database Vuoto o Errore Connessione.")
-
+            db_len = len(ex_db)
+            st.write(f"📊 **Database:** {db_len} esercizi.")
+            if db_len < 800: st.error("⚠️ DATABASE INCOMPLETO! Premi il tasto rosso.")
+            else: st.success("✅ Database OK")
         with c2:
             if st.button("🧨 FORZA RESET DB", type="primary"):
-                st.cache_data.clear()
-                st.rerun()
+                st.cache_data.clear(); st.rerun()
 
-        st.markdown("---")
-        st.write("Scrivi parte del nome (es. 'press', 'curl') per vedere TUTTI i risultati e le immagini.")
-        
-        search_term = st.text_input("Cerca esercizio:", placeholder="Es: leg curl")
+        st.info("Scrivi qui sotto il nome dell'esercizio per vedere le FOTO e il NOME ESATTO da copiare nella scheda.")
+        search_term = st.text_input("Cerca esercizio (es. 'plank', 'chest')")
         
         if search_term and len(search_term) > 2:
-            # Filtro "Contiene" (Case Insensitive)
             results = [x for x in ex_db if search_term.lower() in x['name'].lower()]
-            
             if results:
-                st.write(f"Trovati {len(results)} risultati:")
+                st.write(f"Trovati {len(results)} esercizi:")
                 cols_db = st.columns(4)
-                for idx, res in enumerate(results[:24]): # Mostra fino a 24 risultati
+                for idx, res in enumerate(results[:20]):
                     with cols_db[idx % 4]:
                         st.markdown(f"**{res['name']}**")
-                        # MOSTRA TUTTE LE IMMAGINI (Non solo la prima)
                         if res.get('images'):
-                            for img_path in res['images']:
-                                st.image("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/" + img_path, use_container_width=True)
+                            st.image("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/" + res['images'][0], use_container_width=True)
                         st.code(res['name'], language=None)
-            else:
-                st.warning("Nessun esercizio trovato con questo nome.")
+            else: st.warning("Nessun esercizio trovato.")
     
     st.divider()
 
-    # --- SELEZIONE ATLETA E RESTO DEL PROGRAMMA ---
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
         raw_emails = [str(r.get('E-mail') or r.get('Email')).strip().lower() for r in sh_ana.get_all_records()]
@@ -320,79 +371,98 @@ def coach_dashboard():
         if 'current_athlete' not in st.session_state or st.session_state['current_athlete'] != sel_email:
             st.session_state['current_athlete'] = sel_email
             st.session_state['generated_plan'] = None
+            st.session_state['generated_diet'] = None 
             st.session_state['coach_comment'] = ""
 
         history = get_full_history(sel_email)
         st.header(f"Analisi: {sel_email}")
         
-        if not history:
-            st.warning("Nessun dato storico trovato.")
+        if not history: st.warning("Nessun dato storico trovato.")
         else:
             last = history[-1]
-            is_first_visit = len(history) == 1
-            if is_first_visit:
-                st.info("🆕 PRIMA VISITA")
-                cols = st.columns(4)
-                for i, (k, v) in enumerate(last.items()):
-                    if isinstance(v, (int, float)) and v > 0: cols[i % 4].metric(k, f"{v}")
-            else:
-                st.success(f"📈 CONTROLLO ({len(history)} ingressi)")
-                metrics_keys = [k for k, v in last.items() if isinstance(v, (int, float)) and v > 0]
-                row_cols = st.columns(3)
-                for i, key in enumerate(metrics_keys):
-                    vals = [h.get(key, 0) for h in history]
-                    curr = vals[-1]; prev = vals[-2]; start = vals[0]
-                    d_prev = curr - prev; d_start = curr - start
-                    
-                    with row_cols[i % 3]:
-                        st.markdown(f"""
-                        <div class="metric-box">
-                            <div style="color:#888;">{key}</div>
-                            <div style="font-size:1.8em; color:white;">{curr}</div>
-                            <div style="display:flex; justify-content:space-between; font-size:0.9em;">
-                                <span style="color:{'#4ade80' if d_prev<0 else '#f87171'}">Prev: {d_prev:+.1f}</span>
-                                <span style="color:#888">Start: {d_start:+.1f}</span>
-                            </div>
+            st.success(f"📈 CONTROLLO ({len(history)} ingressi)")
+            metrics_keys = [k for k, v in last.items() if isinstance(v, (int, float)) and v > 0]
+            row_cols = st.columns(3)
+            for i, key in enumerate(metrics_keys):
+                vals = [h.get(key, 0) for h in history]
+                curr = vals[-1]; prev = vals[-2] if len(vals)>1 else vals[0]; start = vals[0]
+                d_prev = curr - prev; d_start = curr - start
+                with row_cols[i % 3]:
+                    st.markdown(f"""
+                    <div class="metric-box">
+                        <div style="color:#888;">{key}</div>
+                        <div style="font-size:1.8em; color:white;">{curr}</div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.9em;">
+                            <span style="color:{'#4ade80' if d_prev<0 else '#f87171'}">Prev: {d_prev:+.1f}</span>
+                            <span style="color:#888">Start: {d_start:+.1f}</span>
                         </div>
-                        """, unsafe_allow_html=True)
-                        if len(vals) > 1: st.line_chart(pd.DataFrame(vals), height=100)
+                    </div>""", unsafe_allow_html=True)
 
         st.divider()
 
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.subheader("1. COMMENTO")
-            comment_input = st.text_area("Feedback", height=300, key="input_comment")
-        with c2:
-            st.subheader("2. INCOLLA SCHEDA")
-            raw_input = st.text_area("Testo grezzo", height=600, key="input_raw", placeholder="Sessione A\nESERCIZIO: Panca | SEARCH_NAME: Bench Press...")
+        st.subheader("🛠️ CREAZIONE PIANO")
+        tab_workout, tab_diet = st.tabs(["🏋️‍♂️ ALLENAMENTO", "🥗 ALIMENTAZIONE"])
 
-        if st.button("🔄 1. GENERA ANTEPRIMA"):
-            if not raw_input:
-                st.error("Incolla la scheda!")
-            else:
-                with st.spinner("Analisi scheda e ricerca immagini..."):
-                    prompt = f"""
+        with tab_workout:
+            raw_workout = st.text_area("Incolla Scheda Allenamento", height=400, key="input_raw_workout", placeholder="Sessione A...")
+        
+        with tab_diet:
+            raw_diet = st.text_area("Incolla Piano Alimentare", height=400, key="input_raw_diet", placeholder="Lunedì: Colazione...\nMartedì:...")
+            diet_note_input = st.text_area("Note specifiche per la DIETA (appariranno in fondo)", height=100, key="input_diet_note")
+
+        comment_input = st.text_area("Commento Generale (Chat)", height=100, key="input_comment")
+
+        if st.button("🔄 GENERA ANTEPRIMA"):
+            with st.spinner("Elaborazione..."):
+                client_ai = openai.Client(api_key=st.secrets["openai_key"])
+                
+                # WORKOUT
+                if raw_workout:
+                    prompt_w = f"""
                     Agisci come un parser JSON rigoroso.
+                    INPUT: {raw_workout}
+                    ISTRUZIONI: Estrai SEARCH_NAME se presente.
+                    SCHEMA JSON: {{"sessions": [{{"name": "...", "exercises": [{{"name": "...", "search_name": "...", "details": "...", "note": "..."}}]}}]}}
+                    """
+                    try:
+                        res_w = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt_w}])
+                        clean_w = clean_json_response(res_w.choices[0].message.content)
+                        plan_json = json.loads(clean_w)
+                        for s in plan_json.get('sessions', []):
+                            for ex in s.get('exercises', []):
+                                query = ex.get('search_name', ex.get('name'))
+                                imgs, debug_msg = find_exercise_images(query, ex_db)
+                                ex['images'] = imgs[:2]
+                                ex['debug_info'] = f"Query: '{query}' -> {debug_msg}"
+                        st.session_state['generated_plan'] = plan_json
+                    except Exception as e: st.error(f"Errore AI Workout: {e}")
+                else: st.session_state['generated_plan'] = None
+
+                # DIETA (NUOVA STRUTTURA A GIORNI)
+                if raw_diet:
+                    prompt_d = f"""
+                    Agisci come un nutrizionista. Analizza il testo e dividilo per GIORNI se specificati (Lunedì, Martedì...).
+                    Se non ci sono giorni specifici, metti tutto sotto "Giornata Tipo".
+                    
                     INPUT UTENTE:
-                    {raw_input}
+                    {raw_diet}
                     
-                    ISTRUZIONI SPECIALI:
-                    1. Estrai "SEARCH_NAME" se presente per il campo "search_name".
-                    2. Se "SEARCH_NAME" non c'è, crea un "search_name" INGLESE GENERICO.
-                    3. "name" DEVE essere l'originale ITALIANO.
+                    INPUT NOTA COACH:
+                    {diet_note_input}
                     
-                    SCHEMA JSON:
+                    SCHEMA JSON OBBLIGATORIO:
                     {{
-                        "sessions": [
+                        "daily_calories": "es. 2000 kcal",
+                        "water_intake": "es. 2L",
+                        "diet_note": "{diet_note_input}",
+                        "days": [
                             {{
-                                "name": "Nome Sessione",
-                                "exercises": [
+                                "day_name": "Lunedì (o Giornata Tipo)",
+                                "meals": [
                                     {{
-                                        "name": "Nome Esatto",
-                                        "search_name": "Nome Semplice Inglese",
-                                        "details": "Dettagli",
-                                        "note": "Note"
+                                        "name": "Colazione",
+                                        "foods": ["Uova", "Pane"],
+                                        "notes": "..."
                                     }}
                                 ]
                             }}
@@ -400,38 +470,52 @@ def coach_dashboard():
                     }}
                     """
                     try:
-                        client_ai = openai.Client(api_key=st.secrets["openai_key"])
-                        res = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt}])
-                        clean_text = clean_json_response(res.choices[0].message.content)
-                        plan_json = json.loads(clean_text)
-                        
-                        for s in plan_json.get('sessions', []):
-                            for ex in s.get('exercises', []):
-                                query = ex.get('search_name', ex.get('name'))
-                                imgs, debug_msg = find_exercise_images(query, ex_db)
-                                ex['images'] = imgs[:2]
-                                ex['debug_info'] = f"Query: '{query}' -> {debug_msg}"
-                        
-                        st.session_state['generated_plan'] = plan_json
-                        st.session_state['coach_comment'] = comment_input
-                        st.rerun() 
-                    except Exception as e: st.error(f"Errore AI: {e}")
+                        res_d = client_ai.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":prompt_d}])
+                        clean_d = clean_json_response(res_d.choices[0].message.content)
+                        diet_json = json.loads(clean_d)
+                        st.session_state['generated_diet'] = diet_json
+                    except Exception as e: st.error(f"Errore AI Dieta: {e}")
+                else: st.session_state['generated_diet'] = None
+                
+                st.session_state['coach_comment'] = comment_input
+                st.rerun()
 
-        if st.session_state.get('generated_plan'):
+        # --- ANTEPRIMA ---
+        if st.session_state.get('generated_plan') or st.session_state.get('generated_diet'):
             st.markdown("---")
-            st.subheader("👁️ ANTEPRIMA")
-            if st.session_state['coach_comment']: st.info(st.session_state['coach_comment'])
-            render_preview_card(st.session_state['generated_plan'], show_debug=True)
+            st.subheader("👁️ ANTEPRIMA FINALE")
+            if st.session_state['coach_comment']: st.info(f"💬 {st.session_state['coach_comment']}")
             
-            if st.button("✅ 2. INVIA AL CLIENTE", type="primary"):
+            t1, t2 = st.tabs(["SCHEDA", "DIETA"])
+            with t1:
+                if st.session_state.get('generated_plan'):
+                    render_preview_card(st.session_state['generated_plan'], show_debug=True)
+                else: st.warning("Nessuna scheda.")
+            
+            with t2:
+                if st.session_state.get('generated_diet'):
+                    render_diet_card(st.session_state['generated_diet'])
+                else: st.warning("Nessuna dieta.")
+
+            if st.button("✅ INVIA AL CLIENTE", type="primary"):
                 try:
                     db = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
                     full_name = f"{sel_email}" 
-                    json_str = json.dumps(st.session_state['generated_plan'])
-                    db.append_row([datetime.now().strftime("%Y-%m-%d"), sel_email, full_name, st.session_state['coach_comment'], json_str])
-                    st.success("INVIATA!")
+                    json_w = json.dumps(st.session_state['generated_plan']) if st.session_state['generated_plan'] else ""
+                    json_d = json.dumps(st.session_state['generated_diet']) if st.session_state['generated_diet'] else ""
+                    
+                    db.append_row([
+                        datetime.now().strftime("%Y-%m-%d"),
+                        sel_email,
+                        full_name,
+                        st.session_state['coach_comment'],
+                        json_w, 
+                        json_d  
+                    ])
+                    st.success("INVIATA CORRETTAMENTE!")
                     st.session_state['generated_plan'] = None
-                except Exception as e: st.error(f"Errore DB: {e}")
+                    st.session_state['generated_diet'] = None
+                except Exception as e: st.error(f"Errore DB: {e}. HAI AGGIUNTO LA COLONNA F?")
 
 # ==============================================================================
 # 5. DASHBOARD ATLETA
@@ -442,7 +526,7 @@ def athlete_dashboard():
     st.sidebar.title("Login Atleta")
     email = st.sidebar.text_input("La tua Email")
     
-    if st.sidebar.button("VEDI LA MIA SCHEDA"):
+    if st.sidebar.button("VEDI I MIEI PIANI"):
         try:
             sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
             data = sh.get_all_records()
@@ -450,23 +534,33 @@ def athlete_dashboard():
             
             if my_plans:
                 last_plan = my_plans[-1]
-                st.title(f"Scheda del {last_plan['Data']}")
+                st.title(f"Piano del {last_plan['Data']}")
                 if last_plan.get('Commento'): st.info(f"💬 **Messaggio dal Coach:**\n\n{last_plan['Commento']}")
-                st.divider()
                 
-                raw_json = last_plan.get('JSON_Completo') or last_plan.get('JSON_Scheda') or last_plan.get('JSON')
-                if not raw_json: st.error("⚠️ Dati vuoti nel DB.")
-                else:
-                    try:
-                        plan_json = json.loads(raw_json)
-                        render_preview_card(plan_json, show_debug=False)
-                    except:
+                raw_w = last_plan.get('JSON_Completo') or last_plan.get('JSON_Scheda')
+                raw_d = last_plan.get('JSON_Dieta') 
+                
+                tab_w, tab_d = st.tabs(["🏋️‍♂️ ALLENAMENTO", "🥗 ALIMENTAZIONE"])
+                
+                with tab_w:
+                    if raw_w:
                         try:
-                            import ast
-                            plan_json = ast.literal_eval(raw_json)
-                            render_preview_card(plan_json, show_debug=False)
-                        except: st.error("⚠️ FORMATO DATI NON VALIDO."); st.code(raw_json)
-            else: st.warning("Nessuna scheda trovata per questa email.")
+                            try: w_json = json.loads(raw_w)
+                            except: w_json = ast.literal_eval(raw_w)
+                            render_preview_card(w_json, show_debug=False)
+                        except: st.error("Errore scheda.")
+                    else: st.info("Nessun allenamento.")
+
+                with tab_d:
+                    if raw_d:
+                        try:
+                            try: d_json = json.loads(raw_d)
+                            except: d_json = ast.literal_eval(raw_d)
+                            render_diet_card(d_json)
+                        except: st.error("Errore dieta.")
+                    else: st.info("Nessuna alimentazione.")
+
+            else: st.warning("Nessun piano trovato per questa email.")
         except Exception as e: st.error(f"Errore connessione: {e}")
 
 # ==============================================================================
