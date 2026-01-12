@@ -118,38 +118,16 @@ def get_full_history(email):
     return history
 
 # ==============================================================================
-# 2. MOTORE AI & IMMAGINI (CON LA TUA FOTO CARDIO)
+# 2. MOTORE AI & IMMAGINI
 # ==============================================================================
 @st.cache_data(ttl=3600)
 def load_exercise_db():
     try: 
-        # 1. SCARICA IL DATABASE PUBBLICO (Quello stabile di GitHub)
         resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=20)
-        data = []
         if resp.status_code == 200:
             data = resp.json()
-        
-        # --- LA TUA IMMAGINE JOLLY PER IL CARDIO (iStock) ---
-        IMG_CARDIO = ["https://media.istockphoto.com/id/1161723348/it/vettoriale/battito-cardiaco-astratto-cardiogramma-cardiologia-sfondo-nero-con-cuore-rosso-impulso.jpg?s=170667a&w=0&k=20&c=WD5PZ_G5m3I2lN3OyKRrei-Q2OyrGCJxqx94u0qeoLw="]
-
-        # 2. AGGIUNGI QUI I TUOI ESERCIZI (Tutti puntano all'immagine Jolly)
-        esercizi_extra = [
-            { "name": "Tapis Roulant", "images": IMG_CARDIO },
-            { "name": "Cyclette Orizzontale", "images": IMG_CARDIO },
-            { "name": "Cyclette Verticale", "images": IMG_CARDIO },
-            { "name": "Ellittica", "images": IMG_CARDIO },
-            { "name": "Bici da Spinning", "images": IMG_CARDIO },
-            { "name": "Air Bike", "images": IMG_CARDIO },
-            { "name": "Vogatore", "images": IMG_CARDIO },
-            { "name": "Stairmaster", "images": IMG_CARDIO },
-            # Side Plank non è cardio, lasciamo la sua foto specifica
-            { "name": "Side Plank", "images": ["https://www.inspireusafoundation.org/wp-content/uploads/2023/07/side-plank-benefits-1024x684.png"] }
-        ]
-        
-        # 3. UNISCE TUTTO INSIEME
-        full_db = data + esercizi_extra
-        return sorted(full_db, key=lambda x: x['name'])
-        
+            return sorted(data, key=lambda x: x['name'])
+        return []
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
