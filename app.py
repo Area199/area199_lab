@@ -162,7 +162,30 @@ def find_exercise_images(name_query, db_exercises):
         "dead bug": "dead bug",
         "vacuum": "stomach vacuum"
     }
-
+# 2. AREA ESERCIZI PERSONALIZZATI
+        esercizi_extra = [
+            {
+                "name": "Tapis Roulant", 
+                "images": ["https://images.unsplash.com/photo-1576678927484-cc907957088c?q=80&w=400&auto=format&fit=crop"] 
+            },
+            {
+                "name": "Cyclette / Air Bike", 
+                "images": ["https://images.unsplash.com/photo-1538805060512-e359015a8ba9?q=80&w=400&auto=format&fit=crop"] 
+            },
+            {
+                "name": "Ellittica", 
+                "images": ["https://post.healthline.com/wp-content/uploads/2020/07/Elliptical-732x549-thumbnail.jpg"] 
+            },
+            {
+                "name": "Side Plank", 
+                "images": ["https://www.inspireusafoundation.org/wp-content/uploads/2023/07/side-plank-benefits-1024x684.png"] 
+            },
+            # --- ECCO LA TUA BICI DA SPINNING ---
+            {
+                "name": "Bici da Spinning", 
+                "images": ["https://www.panattasport.com/wp-content/uploads/2023/04/indoor-cycling-1536x864.jpg"] 
+            }
+        ]
     search_terms = [q] 
     for key in sorted(synonyms.keys(), key=len, reverse=True):
         if key in q:
@@ -717,6 +740,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
