@@ -157,13 +157,13 @@ def load_exercise_db():
             }
         ]
         
-        # 3. UNISCE TUTTO INSIEME (GitHub + I tuoi Extra)
+        # 3. UNISCE TUTTO INSIEME
         full_db = data + esercizi_extra
         
         return sorted(full_db, key=lambda x: x['name'])
         
-    except: return []
-    except: return []
+    except: 
+        return []
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return ([], "DB/Query Vuota")
@@ -752,6 +752,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
