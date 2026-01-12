@@ -135,9 +135,7 @@ def find_exercise_images(name_query, db_exercises):
     BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
     q = name_query.lower().strip()
 
-    # --- 1. DIZIONARIO DEI SINONIMI (AGGIORNATO CON FIX ROPE HAMMER) ---
     synonyms = {
-        # GAMBE
         "lying leg curl": "lying leg curls",
         "leg curl": "lying leg curls",
         "leg extension": "leg extensions",
@@ -145,28 +143,20 @@ def find_exercise_images(name_query, db_exercises):
         "calf raise": "calf raise",
         "hip adduction": "adductor",
         "adduction": "adductor",
-        
-        # SCHIENA
         "reverse pec deck": "reverse fly",
         "t-bar": "t-bar",
         "lat pulldown": "pulldown",
         "straight arm": "straight-arm pulldown",
         "cable row": "seated cable row",
         "hyperextension": "hyperextension",
-        
-        # PETTO / SPALLE
         "pec deck": "butterfly",
         "chest press": "chest press",
         "face pull": "face pull",
         "lateral raise": "lateral raise",
-        
-        # BRACCIA (FIX QUI SOTTO)
         "pushdown": "pushdown",
         "triceps pushdown": "pushdown",
         "preacher curl": "preacher curl",
         "overhead cable": "overhead triceps",
-        
-        # CORE
         "side plank": ["side plank", "side bridge"],
         "plank": "plank",
         "dead bug": "dead bug",
@@ -174,9 +164,6 @@ def find_exercise_images(name_query, db_exercises):
     }
 
     search_terms = [q] 
-    
-    # Cerca la chiave più lunga che matcha (per priorità)
-    # Esempio: se scrivi "Rope Hammer", trova prima "rope hammer" e ignora "hammer curl"
     for key in sorted(synonyms.keys(), key=len, reverse=True):
         if key in q:
             val = synonyms[key]
@@ -184,18 +171,15 @@ def find_exercise_images(name_query, db_exercises):
             else: search_terms = [val]
             break
 
-    # --- 2. RICERCA ---
     for term in search_terms:
         candidates = []
         for ex in db_exercises:
             if term.lower() in ex['name'].lower():
                 candidates.append(ex)
         if candidates:
-            # Se trova il match esatto con il nome lungo, prende quello
             best = min(candidates, key=lambda x: len(x['name']))
             return ([BASE_URL + i for i in best.get('images', [])], f"Synonym: '{term}' -> {best['name']}")
 
-    # --- 3. FALLBACK FUZZY ---
     db_names = [x['name'] for x in db_exercises]
     match = process.extractOne(q, db_names, scorer=fuzz.token_set_ratio)
     
@@ -220,7 +204,6 @@ def find_exercise_images(name_query, db_exercises):
 # ==============================================================================
 
 def create_download_link_html(content_html, filename, label):
-    """Crea un bottone per scaricare HTML."""
     b64 = base64.b64encode(content_html.encode()).decode()
     return f'<a href="data:text/html;base64,{b64}" download="{filename}" style="background-color:#E20613; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold; display:block; text-align:center; margin-top:10px; width:100%;">📄 {label}</a>'
 
@@ -230,7 +213,6 @@ def render_preview_card(plan_json, show_debug=False):
         try: plan_json = json.loads(plan_json)
         except: return
 
-    # TASTO DOWNLOAD SCHEDA
     sessions = plan_json.get('sessions', plan_json.get('Sessions', []))
     if not sessions: return
 
@@ -246,7 +228,6 @@ def render_preview_card(plan_json, show_debug=False):
     
     st.markdown(create_download_link_html(html_content, "Scheda_Allenamento.html", "SCARICA SCHEDA ALLENAMENTO"), unsafe_allow_html=True)
 
-    # RENDER A VIDEO
     for session in sessions:
         s_name = session.get('name', session.get('Name', 'Sessione'))
         st.markdown(f"<div class='session-header'>{s_name}</div>", unsafe_allow_html=True)
@@ -273,23 +254,19 @@ def render_preview_card(plan_json, show_debug=False):
         st.info(f"📝 NOTE SCHEDA: {plan_json.get('note_coach')}")
 
 def render_diet_card(diet_json):
-    """Renderizza la dieta (e integrazione) in formato pulito."""
     if not diet_json: return
     if isinstance(diet_json, str):
         try: diet_json = json.loads(diet_json)
         except: return
 
-    # --- TASTO DOWNLOAD (DIETA + INTEGRAZIONE) ---
     html_content = f"""<html><head><style>body{{font-family:Arial;padding:20px;}} h1{{color:#4ade80;}} h2{{color:#60a5fa;}} .meal{{margin-bottom:10px;padding-left:10px;border-left:3px solid #4ade80;}}</style></head><body><h1>PIANO ALIMENTARE</h1><p>Target: {diet_json.get('daily_calories','')} | Acqua: {diet_json.get('water_intake','')}</p>"""
     
-    # Parte Dieta
     for day in diet_json.get('days', []):
         html_content += f"<h3>{day.get('day_name')}</h3>"
         for m in day.get('meals', []):
             html_content += f"<div class='meal'><strong>{m.get('name')}</strong><br>{', '.join(m.get('foods',[]))}<br><em>{m.get('notes','')}</em></div>"
     if diet_json.get('diet_note'): html_content += f"<br><strong>NOTE DIETA:</strong> {diet_json.get('diet_note')}"
     
-    # Integrazione in coda al PDF
     supps = diet_json.get('supplements', [])
     if supps:
         html_content += "<h2>INTEGRAZIONE</h2><ul>"
@@ -300,7 +277,6 @@ def render_diet_card(diet_json):
     html_content += "</body></html>"
     st.markdown(create_download_link_html(html_content, "Piano_Nutrizionale.html", "SCARICA PIANO NUTRIZIONALE"), unsafe_allow_html=True)
 
-    # --- RENDER VIDEO ---
     if 'daily_calories' in diet_json:
         st.info(f"🔥 Target: {diet_json.get('daily_calories')} | 💧 {diet_json.get('water_intake', '2-3L')}")
 
@@ -318,7 +294,6 @@ def render_diet_card(diet_json):
     if diet_json.get('diet_note'):
         st.markdown(f"<div class='note-box'><strong style='color:#4ade80;'>💬 NOTE DIETA:</strong><br><span style='color:#ddd;'>{diet_json['diet_note']}</span></div>", unsafe_allow_html=True)
 
-    # SEZIONE INTEGRAZIONE (Sotto la dieta)
     supps = diet_json.get('supplements', [])
     if supps:
         st.markdown("---")
@@ -337,17 +312,12 @@ def render_diet_card(diet_json):
 # 4. DASHBOARD COACH
 # ==============================================================================
 
-# ==============================================================================
-# 4. DASHBOARD COACH (AGGIORNATA CON PROMPT RIGOROSI IN ITALIANO)
-# ==============================================================================
-
 def coach_dashboard():
     client = get_client()
     ex_db = load_exercise_db()
     
     st.title("DASHBOARD COACH")
 
-    # BROWSER ESERCIZI (Resta uguale)
     with st.expander("🔎 BROWSER DATABASE ESERCIZI", expanded=True):
         c1, c2 = st.columns([3, 1])
         with c1:
@@ -377,7 +347,6 @@ def coach_dashboard():
     
     st.divider()
 
-    # SELEZIONE ATLETA
     try:
         sh_ana = client.open("BIO ENTRY ANAMNESI").sheet1
         raw_emails = [str(r.get('E-mail') or r.get('Email')).strip().lower() for r in sh_ana.get_all_records()]
@@ -447,9 +416,7 @@ def coach_dashboard():
             with st.spinner("Elaborazione..."):
                 client_ai = openai.Client(api_key=st.secrets["openai_key"])
                 
-                # --- QUI C'È LA MODIFICA FONDAMENTALE (PROMPT CORRETTO) ---
-                
-                # 1. WORKOUT (BLOCCATO IN ITALIANO)
+                # 1. WORKOUT
                 if raw_workout:
                     prompt_w = f"""
                     Agisci come un parser JSON "FOTOCOPIATRICE".
@@ -497,8 +464,7 @@ def coach_dashboard():
                     except: st.error("Errore AI Workout")
                 else: st.session_state['generated_plan'] = None
 
-                # 2. DIETA (BLOCCATA SU TARGET E GIORNI ESATTI)
-                # 2. DIETA + INTEGRAZIONE (FIX MULTI-GIORNO + TARGET)
+                # 2. DIETA
                 if raw_diet or raw_supp:
                     prompt_d = f"""
                     Agisci come un nutrizionista sportivo ITALIANO.
@@ -507,25 +473,20 @@ def coach_dashboard():
                     INPUT INTEGRAZIONE: {raw_supp if raw_supp else 'Nessuna'}.
                     NOTE DEL COACH: {note_diet}.
                     
-                    ISTRUZIONI CRITICHE (DA RISPETTARE ALLA LETTERA):
+                    ISTRUZIONI CRITICHE:
                     1. LINGUA: Usa SOLO ITALIANO.
                     2. CALORIE: Copia TUTTA la stringa dei target calorici (es. "2300 Training / 1900 Rest"). NON tagliarla.
-                    3. GIORNI MULTIPLI: Se l'input contiene più tipologie di giorni (es. "Training Day" e "Rest Day", oppure "Lunedì", "Martedì"...), DEVI creare un elemento nell'array 'days' PER OGNUNO DI ESSI. 
-                       NON limitarti al primo giorno. Scrivi tutti i giorni presenti nell'input.
-                    4. NOMI GIORNI: Usa ESATTAMENTE i nomi scritti dall'utente (es. "Training Day"). NON inventare "Lunedì" se non è scritto.
+                    3. GIORNI MULTIPLI: Se l'input contiene più tipologie di giorni, CREA un elemento nell'array 'days' PER OGNUNO DI ESSI. 
+                    4. NOMI GIORNI: Usa ESATTAMENTE i nomi scritti dall'utente.
                     
                     SCHEMA JSON OBBLIGATORIO:
                     {{
-                        "daily_calories": "Copia esatta della stringa target (es. 2300 ON / 1900 OFF)", 
+                        "daily_calories": "Copia esatta della stringa target", 
                         "water_intake": "es. 3-4 Litri", 
                         "diet_note": "{note_diet}",
                         "days": [ 
                             {{ 
-                                "day_name": "Nome Giorno 1 (es. Training Day)", 
-                                "meals": [ {{ "name": "Colazione", "foods": ["..."], "notes": "..." }} ] 
-                            }},
-                            {{ 
-                                "day_name": "Nome Giorno 2 (es. Rest Day) - SE PRESENTE", 
+                                "day_name": "Nome Giorno 1", 
                                 "meals": [ {{ "name": "Colazione", "foods": ["..."], "notes": "..." }} ] 
                             }}
                         ],
@@ -541,7 +502,6 @@ def coach_dashboard():
                     except: st.error("Errore AI Dieta/Supp")
                 else: st.session_state['generated_diet'] = None
 
-        # --- ANTEPRIMA ---
         if st.session_state.get('generated_plan') or st.session_state.get('generated_diet'):
             st.markdown("---")
             st.subheader("👁️ ANTEPRIMA FINALE")
@@ -563,7 +523,6 @@ def coach_dashboard():
                     json_w = json.dumps(st.session_state['generated_plan']) if st.session_state['generated_plan'] else ""
                     json_d = json.dumps(st.session_state['generated_diet']) if st.session_state['generated_diet'] else ""
                     
-                    # SALVA
                     db.append_row([
                         datetime.now().strftime("%Y-%m-%d"),
                         sel_email,
@@ -578,15 +537,112 @@ def coach_dashboard():
                 except Exception as e: st.error(f"Errore DB: {e}")
 
 # ==============================================================================
-# 5. DASHBOARD ATLETA
+# 5. DASHBOARD ATLETA (CON SEMAFORO E PAGAMENTI DINAMICI)
 # ==============================================================================
+
+def check_subscription_status(email):
+    """
+    Ritorna: is_blocked (True/False), status_color, msg, custom_link
+    """
+    try:
+        client = get_client()
+        try:
+            sh = client.open("AREA199_DB").worksheet("CLIENTI_ATTIVI")
+        except:
+            # Se il foglio non esiste, in emergenza facciamo passare, ma segnaliamo errore
+            return False, 'green', "Foglio Controllo Assente", ""
+
+        records = sh.get_all_records()
+        clean_email = email.strip().lower()
+        
+        user_record = None
+        for r in records:
+            if str(r.get('Email')).strip().lower() == clean_email:
+                user_record = r
+                break
+        
+        if not user_record:
+            return True, 'red', "❌ UTENTE NON TROVATO. Contatta il coach.", ""
+            
+        # Dati Utente
+        scadenza_str = str(user_record.get('Scadenza'))
+        custom_link = str(user_record.get('Link_Pagamento', '')).strip()
+        
+        try:
+            scadenza_dt = datetime.strptime(scadenza_str, "%d/%m/%Y")
+            oggi = datetime.now()
+            
+            # Calcoliamo la differenza di giorni
+            delta = scadenza_dt - oggi
+            giorni_rimanenti = delta.days + 1 
+            
+            # CASO 1: SCADUTO (Zona Rossa)
+            if scadenza_dt < oggi: 
+                return True, 'red', f"⛔ ABBONAMENTO SCADUTO IL {scadenza_str}", custom_link
+            
+            # CASO 2: IN SCADENZA (Zona Gialla - 5 giorni o meno)
+            elif giorni_rimanenti <= 5:
+                return False, 'yellow', f"⚠️ ATTENZIONE: Il tuo abbonamento scade tra {giorni_rimanenti} giorni ({scadenza_str}).", custom_link
+            
+            # CASO 3: ATTIVO (Zona Verde)
+            else:
+                return False, 'green', "OK", custom_link
+                
+        except:
+            return True, 'red', "⚠️ ERRORE FORMATO DATA (Usa GG/MM/AAAA).", custom_link
+
+    except Exception as e:
+        return True, 'red', f"Errore verifica: {e}", ""
 
 def athlete_dashboard():
     client = get_client()
+    
+    # LINK DI RISERVA (Se non specificato nel foglio Excel)
+    LINK_DEFAULT = "https://revolut.me/antope1909?currency=EUR&amount=40" 
+    
     st.sidebar.title("Login Atleta")
     email = st.sidebar.text_input("La tua Email")
     
     if st.sidebar.button("VEDI I MIEI PIANI"):
+        if not email:
+            st.warning("Inserisci la tua email.")
+            return
+
+        # 1. CONTROLLO STATO ABBONAMENTO
+        is_blocked, color, msg, user_link = check_subscription_status(email)
+        
+        # Scegliamo il link: se c'è quello personalizzato nel foglio usa quello, altrimenti default
+        final_link = user_link if user_link.startswith("http") else LINK_DEFAULT
+        
+        # --- GESTIONE ZONA ROSSA (BLOCCO) ---
+        if is_blocked:
+            st.error(msg)
+            st.markdown(f"""
+            <div style="background-color:#450a0a; padding:20px; border-radius:10px; border:1px solid #ef4444; text-align:center; margin-bottom: 20px;">
+                <h2 style="color:#f87171; margin-top:0;">ACCESSO NEGATO</h2>
+                <p style="color:#fca5a5; font-size:1.1em;">Il percorso è in pausa amministrativa.</p>
+                <a href="{final_link}" target="_blank" style="background-color:#dc2626; color:white; padding:15px 30px; text-decoration:none; border-radius:5px; font-weight:bold; font-size:1.2em; display:inline-block; margin-top:15px; border:1px solid white;">
+                    💳 RINNOVA ORA PER SBLOCCARE
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+            return # STOP. Non carica nient'altro.
+            
+        # --- GESTIONE ZONA GIALLA (AVVISO MA FA ENTRARE) ---
+        if color == 'yellow':
+            st.markdown(f"""
+            <div style="background-color:#422006; padding:15px; border-radius:10px; border:1px solid #eab308; display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <div>
+                    <strong style="color:#facc15; font-size:1.2em;">⚠️ SCADENZA IMMINENTE</strong><br>
+                    <span style="color:#fde047;">{msg}</span>
+                </div>
+                <a href="{final_link}" target="_blank" style="background-color:#ca8a04; color:black; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold; white-space:nowrap; margin-left:10px;">
+                    RINNOVA ADESSO
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 2. CARICAMENTO SCHEDA (Codice Originale)
         try:
             sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
             data = sh.get_all_records()
@@ -620,7 +676,10 @@ def athlete_dashboard():
                         except: st.error("Errore visualizzazione nutrizione.")
                     else: st.info("Nessuna alimentazione.")
 
-            else: st.warning("Nessun piano trovato per questa email.")
+            else: 
+                # Se l'utente è attivo ma non ha ancora schede caricate
+                st.warning("Abbonamento ATTIVO, ma non hai ancora schede caricate dal Coach.")
+                
         except Exception as e: st.error(f"Errore connessione: {e}")
 
 # ==============================================================================
@@ -636,5 +695,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
