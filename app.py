@@ -123,11 +123,46 @@ def get_full_history(email):
 @st.cache_data(ttl=3600)
 def load_exercise_db():
     try: 
+        # 1. SCARICA IL DATABASE PUBBLICO (Quello stabile di GitHub)
         resp = requests.get("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json", timeout=20)
+        data = []
         if resp.status_code == 200:
             data = resp.json()
-            return sorted(data, key=lambda x: x['name'])
-        return []
+        
+        # 2. AGGIUNGI QUI SOTTO I TUOI ESERCIZI EXTRA
+        esercizi_extra = [
+            {
+                "name": "Tapis Roulant", 
+                "images": ["https://images.unsplash.com/photo-1576678927484-cc907957088c?q=80&w=400&auto=format&fit=crop"] 
+            },
+            {
+                "name": "Cyclette / Air Bike", 
+                "images": ["https://images.unsplash.com/photo-1538805060512-e359015a8ba9?q=80&w=400&auto=format&fit=crop"] 
+            },
+            {
+                "name": "Ellittica", 
+                "images": ["https://post.healthline.com/wp-content/uploads/2020/07/Elliptical-732x549-thumbnail.jpg"] 
+            },
+            {
+                "name": "Side Plank", 
+                "images": ["https://www.inspireusafoundation.org/wp-content/uploads/2023/07/side-plank-benefits-1024x684.png"] 
+            },
+            {
+                "name": "Plank Statico", 
+                "images": ["https://www.inspireusafoundation.org/wp-content/uploads/2021/10/plank-muscles-worked-1024x599.png"]
+            },
+            {
+                "name": "Bici da Spinning", 
+                "images": ["https://www.panattasport.com/wp-content/uploads/2023/04/indoor-cycling-1536x864.jpg"] 
+            }
+        ]
+        
+        # 3. UNISCE TUTTO INSIEME (GitHub + I tuoi Extra)
+        full_db = data + esercizi_extra
+        
+        return sorted(full_db, key=lambda x: x['name'])
+        
+    except: return []
     except: return []
 
 def find_exercise_images(name_query, db_exercises):
@@ -717,6 +752,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
