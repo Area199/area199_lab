@@ -117,9 +117,6 @@ def get_full_history(email):
 
     return history
 
-# ==============================================================================
-# 2. MOTORE AI & IMMAGINI
-# ==============================================================================
 @st.cache_data(ttl=3600)
 def load_exercise_db():
     try: 
@@ -130,7 +127,7 @@ def load_exercise_db():
             data = resp.json()
         
         # 2. AGGIUNGI QUI SOTTO I TUOI ESERCIZI EXTRA
-       esercizi_extra = [
+        esercizi_extra = [
             {
                 "name": "Tapis Roulant", 
                 "images": ["https://i.imgur.com/88vIoLM.png"] 
@@ -748,6 +745,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
