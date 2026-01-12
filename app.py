@@ -117,6 +117,9 @@ def get_full_history(email):
 
     return history
 
+# ==============================================================================
+# 2. MOTORE AI & IMMAGINI (CON LA TUA FOTO CARDIO)
+# ==============================================================================
 @st.cache_data(ttl=3600)
 def load_exercise_db():
     try: 
@@ -126,37 +129,28 @@ def load_exercise_db():
         if resp.status_code == 200:
             data = resp.json()
         
-        # 2. AGGIUNGI QUI SOTTO I TUOI ESERCIZI EXTRA
+        # --- LA TUA IMMAGINE JOLLY PER IL CARDIO (iStock) ---
+        IMG_CARDIO = ["https://media.istockphoto.com/id/1161723348/it/vettoriale/battito-cardiaco-astratto-cardiogramma-cardiologia-sfondo-nero-con-cuore-rosso-impulso.jpg?s=170667a&w=0&k=20&c=WD5PZ_G5m3I2lN3OyKRrei-Q2OyrGCJxqx94u0qeoLw="]
+
+        # 2. AGGIUNGI QUI I TUOI ESERCIZI (Tutti puntano all'immagine Jolly)
         esercizi_extra = [
-            {
-                "name": "Tapis Roulant", 
-                "images": ["https://i.imgur.com/88vIoLM.png"] 
-            },
-            {
-                "name": "Cyclette Orizzontale", 
-                "images": ["https://i.imgur.com/3lKehpw.png"] 
-            },
-            {
-                "name": "Ellittica", 
-                "images": ["https://i.imgur.com/QFcp58Q.png"] 
-            },
-            {
-                "name": "Side Plank", 
-                "images": ["https://i.imgur.com/SVKjiFD.png"] 
-            },
-            {
-                "name": "Bici da spinning", 
-                "images": ["https://i.imgur.com/F1hehny.png"] 
-            }
+            { "name": "Tapis Roulant", "images": IMG_CARDIO },
+            { "name": "Cyclette Orizzontale", "images": IMG_CARDIO },
+            { "name": "Cyclette Verticale", "images": IMG_CARDIO },
+            { "name": "Ellittica", "images": IMG_CARDIO },
+            { "name": "Bici da Spinning", "images": IMG_CARDIO },
+            { "name": "Air Bike", "images": IMG_CARDIO },
+            { "name": "Vogatore", "images": IMG_CARDIO },
+            { "name": "Stairmaster", "images": IMG_CARDIO },
+            # Side Plank non è cardio, lasciamo la sua foto specifica
+            { "name": "Side Plank", "images": ["https://www.inspireusafoundation.org/wp-content/uploads/2023/07/side-plank-benefits-1024x684.png"] }
         ]
         
         # 3. UNISCE TUTTO INSIEME
         full_db = data + esercizi_extra
-        
         return sorted(full_db, key=lambda x: x['name'])
         
-    except: 
-        return []
+    except: return []
 
 def find_exercise_images(name_query, db_exercises):
     if not db_exercises or not name_query: return ([], "DB/Query Vuota")
@@ -639,7 +633,7 @@ def athlete_dashboard():
     client = get_client()
     
     # LINK DI RISERVA
-    LINK_DEFAULT = "https://revolut.me/antope1909?currency=EUR&amount=4500" 
+    LINK_DEFAULT = "https://revolut.me/antope1909?currency=EUR&amount=40" 
     
     st.sidebar.title("Login Atleta")
     email = st.sidebar.text_input("La tua Email")
@@ -745,15 +739,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
 
 
 
