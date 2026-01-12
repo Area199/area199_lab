@@ -611,7 +611,7 @@ def athlete_dashboard():
     client = get_client()
     
     # LINK DI RISERVA
-    LINK_DEFAULT = "https://revolut.me/antope1909?currency=EUR&amount=40" 
+    LINK_DEFAULT = "https://revolut.me/antope1909?currency=EUR&amount=45" 
     
     st.sidebar.title("Login Atleta")
     email = st.sidebar.text_input("La tua Email")
@@ -717,5 +717,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
