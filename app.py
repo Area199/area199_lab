@@ -130,26 +130,26 @@ def load_exercise_db():
             data = resp.json()
         
         # 2. AGGIUNGI QUI SOTTO I TUOI ESERCIZI EXTRA
-        esercizi_extra = [
+       esercizi_extra = [
             {
                 "name": "Tapis Roulant", 
-                "images": ["https://imgur.com/88vIoLM"] 
+                "images": ["https://i.imgur.com/88vIoLM.png"] 
             },
             {
-                "name": "Cyclette orizontale", 
-                "images": ["https://imgur.com/undefined"] 
+                "name": "Cyclette Orizzontale", 
+                "images": ["https://i.imgur.com/3lKehpw.png"] 
             },
             {
                 "name": "Ellittica", 
-                "images": ["https://imgur.com/QFcp58Q"] 
+                "images": ["https://i.imgur.com/QFcp58Q.png"] 
             },
             {
                 "name": "Side Plank", 
-                "images": ["https://imgur.com/SVKjiFD"] 
+                "images": ["https://i.imgur.com/SVKjiFD.png"] 
             },
             {
                 "name": "Bici da Spinning", 
-                "images": ["https://imgur.com/F1hehny"] 
+                "images": ["https://i.imgur.com/F1hehny.png"] 
             }
         ]
         
@@ -748,6 +748,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
