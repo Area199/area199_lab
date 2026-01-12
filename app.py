@@ -537,20 +537,19 @@ def coach_dashboard():
                 except Exception as e: st.error(f"Errore DB: {e}")
 
 # ==============================================================================
-# 5. DASHBOARD ATLETA (CON SEMAFORO E PAGAMENTI DINAMICI)
+# 5. DASHBOARD ATLETA (CON PALLINO VERDE E DATA IN ALTO)
 # ==============================================================================
 
 def check_subscription_status(email):
     """
-    Ritorna: is_blocked (True/False), status_color, msg, custom_link
+    Ritorna: is_blocked, status_color, msg, custom_link, scadenza_str
     """
     try:
         client = get_client()
         try:
             sh = client.open("AREA199_DB").worksheet("CLIENTI_ATTIVI")
         except:
-            # Se il foglio non esiste, in emergenza facciamo passare, ma segnaliamo errore
-            return False, 'green', "Foglio Controllo Assente", ""
+            return False, 'green', "Foglio Controllo Assente", "", "N/A"
 
         records = sh.get_all_records()
         clean_email = email.strip().lower()
@@ -562,7 +561,7 @@ def check_subscription_status(email):
                 break
         
         if not user_record:
-            return True, 'red', "❌ UTENTE NON TROVATO. Contatta il coach.", ""
+            return True, 'red', "❌ UTENTE NON TROVATO. Contatta il coach.", "", ""
             
         # Dati Utente
         scadenza_str = str(user_record.get('Scadenza'))
@@ -578,26 +577,26 @@ def check_subscription_status(email):
             
             # CASO 1: SCADUTO (Zona Rossa)
             if scadenza_dt < oggi: 
-                return True, 'red', f"⛔ ABBONAMENTO SCADUTO IL {scadenza_str}", custom_link
+                return True, 'red', f"⛔ ABBONAMENTO SCADUTO IL {scadenza_str}", custom_link, scadenza_str
             
             # CASO 2: IN SCADENZA (Zona Gialla - 5 giorni o meno)
             elif giorni_rimanenti <= 5:
-                return False, 'yellow', f"⚠️ ATTENZIONE: Il tuo abbonamento scade tra {giorni_rimanenti} giorni ({scadenza_str}).", custom_link
+                return False, 'yellow', f"⚠️ ATTENZIONE: Il tuo abbonamento scade tra {giorni_rimanenti} giorni.", custom_link, scadenza_str
             
             # CASO 3: ATTIVO (Zona Verde)
             else:
-                return False, 'green', "OK", custom_link
+                return False, 'green', "OK", custom_link, scadenza_str
                 
         except:
-            return True, 'red', "⚠️ ERRORE FORMATO DATA (Usa GG/MM/AAAA).", custom_link
+            return True, 'red', "⚠️ ERRORE FORMATO DATA (Usa GG/MM/AAAA).", custom_link, scadenza_str
 
     except Exception as e:
-        return True, 'red', f"Errore verifica: {e}", ""
+        return True, 'red', f"Errore verifica: {e}", "", ""
 
 def athlete_dashboard():
     client = get_client()
     
-    # LINK DI RISERVA (Se non specificato nel foglio Excel)
+    # LINK DI RISERVA
     LINK_DEFAULT = "https://revolut.me/antope1909?currency=EUR&amount=40" 
     
     st.sidebar.title("Login Atleta")
@@ -608,10 +607,8 @@ def athlete_dashboard():
             st.warning("Inserisci la tua email.")
             return
 
-        # 1. CONTROLLO STATO ABBONAMENTO
-        is_blocked, color, msg, user_link = check_subscription_status(email)
-        
-        # Scegliamo il link: se c'è quello personalizzato nel foglio usa quello, altrimenti default
+        # 1. CONTROLLO STATO
+        is_blocked, color, msg, user_link, scadenza_display = check_subscription_status(email)
         final_link = user_link if user_link.startswith("http") else LINK_DEFAULT
         
         # --- GESTIONE ZONA ROSSA (BLOCCO) ---
@@ -626,9 +623,21 @@ def athlete_dashboard():
                 </a>
             </div>
             """, unsafe_allow_html=True)
-            return # STOP. Non carica nient'altro.
+            return # STOP
             
-        # --- GESTIONE ZONA GIALLA (AVVISO MA FA ENTRARE) ---
+        # --- MOSTRA SCADENZA CON PALLINO VERDE (Solo se attivo) ---
+        if scadenza_display and scadenza_display != "N/A":
+            # Se è giallo mette pallino giallo, altrimenti verde
+            pallino = "🟡" if color == 'yellow' else "🟢"
+            colore_testo = "#facc15" if color == 'yellow' else "#4ade80"
+            
+            st.markdown(f"""
+            <div style="text-align: right; font-size: 0.9em; color: #888; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px;">
+                {pallino} Scadenza Piano: <strong style="color: {colore_testo};">{scadenza_display}</strong>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # --- GESTIONE ZONA GIALLA (AVVISO EXTRA) ---
         if color == 'yellow':
             st.markdown(f"""
             <div style="background-color:#422006; padding:15px; border-radius:10px; border:1px solid #eab308; display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -637,12 +646,12 @@ def athlete_dashboard():
                     <span style="color:#fde047;">{msg}</span>
                 </div>
                 <a href="{final_link}" target="_blank" style="background-color:#ca8a04; color:black; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold; white-space:nowrap; margin-left:10px;">
-                    RINNOVA ADESSO
+                    RINNOVA
                 </a>
             </div>
             """, unsafe_allow_html=True)
 
-        # 2. CARICAMENTO SCHEDA (Codice Originale)
+        # 2. CARICAMENTO SCHEDA
         try:
             sh = client.open("AREA199_DB").worksheet("SCHEDE_ATTIVE")
             data = sh.get_all_records()
@@ -677,7 +686,6 @@ def athlete_dashboard():
                     else: st.info("Nessuna alimentazione.")
 
             else: 
-                # Se l'utente è attivo ma non ha ancora schede caricate
                 st.warning("Abbonamento ATTIVO, ma non hai ancora schede caricate dal Coach.")
                 
         except Exception as e: st.error(f"Errore connessione: {e}")
@@ -695,3 +703,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
