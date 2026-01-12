@@ -133,27 +133,23 @@ def load_exercise_db():
         esercizi_extra = [
             {
                 "name": "Tapis Roulant", 
-                "images": ["https://images.unsplash.com/photo-1576678927484-cc907957088c?q=80&w=400&auto=format&fit=crop"] 
+                "images": ["https://imgur.com/88vIoLM"] 
             },
             {
-                "name": "Cyclette / Air Bike", 
-                "images": ["https://images.unsplash.com/photo-1538805060512-e359015a8ba9?q=80&w=400&auto=format&fit=crop"] 
+                "name": "Cyclette orizontale", 
+                "images": ["https://imgur.com/undefined"] 
             },
             {
                 "name": "Ellittica", 
-                "images": ["https://post.healthline.com/wp-content/uploads/2020/07/Elliptical-732x549-thumbnail.jpg"] 
+                "images": ["https://imgur.com/QFcp58Q"] 
             },
             {
                 "name": "Side Plank", 
-                "images": ["https://www.inspireusafoundation.org/wp-content/uploads/2023/07/side-plank-benefits-1024x684.png"] 
-            },
-            {
-                "name": "Plank Statico", 
-                "images": ["https://www.inspireusafoundation.org/wp-content/uploads/2021/10/plank-muscles-worked-1024x599.png"]
+                "images": ["https://imgur.com/SVKjiFD"] 
             },
             {
                 "name": "Bici da Spinning", 
-                "images": ["https://www.panattasport.com/wp-content/uploads/2023/04/indoor-cycling-1536x864.jpg"] 
+                "images": ["https://imgur.com/F1hehny"] 
             }
         ]
         
@@ -752,6 +748,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
