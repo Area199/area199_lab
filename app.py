@@ -309,7 +309,7 @@ def render_diet_card(diet_json):
             """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 4. DASHBOARD COACH
+# 4. DASHBOARD COACH (BROWSER AGGIORNATO: 2 FOTO + FIX LINK)
 # ==============================================================================
 
 def coach_dashboard():
@@ -336,12 +336,26 @@ def coach_dashboard():
             results = [x for x in ex_db if search_term.lower() in x['name'].lower()]
             if results:
                 st.write(f"Trovati {len(results)} esercizi:")
-                cols_db = st.columns(4)
+                cols_db = st.columns(4) # Griglia da 4 colonne
+                
                 for idx, res in enumerate(results[:20]):
                     with cols_db[idx % 4]:
                         st.markdown(f"**{res['name']}**")
+                        
+                        # --- MODIFICA: MOSTRA TUTTE LE IMMAGINI (Max 2) ---
                         if res.get('images'):
-                            st.image("https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/" + res['images'][0], use_container_width=True)
+                            # Base URL per GitHub
+                            BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+                            
+                            for img_path in res['images'][:2]: # Prende al massimo le prime 2
+                                # Controllo intelligente: è un link completo o serve il pezzo prima?
+                                if img_path.startswith("http"):
+                                    full_url = img_path
+                                else:
+                                    full_url = BASE_URL + img_path
+                                
+                                st.image(full_url, use_container_width=True)
+                                
                         st.code(res['name'], language=None)
             else: st.warning("Nessun esercizio trovato.")
     
@@ -703,4 +717,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
