@@ -145,7 +145,7 @@ def load_exercise_db():
                 "images": ["https://i.imgur.com/SVKjiFD.png"] 
             },
             {
-                "name": "Bici da Spinning", 
+                "name": "Bici da spinning", 
                 "images": ["https://i.imgur.com/F1hehny.png"] 
             }
         ]
@@ -745,6 +745,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
